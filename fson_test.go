@@ -1192,6 +1192,97 @@ func TestObject_Floats64_WithNan(t *testing.T) {
 	}
 }
 
+func TestObject_Floats64_SkippingSpecialValues(t *testing.T) {
+	// Test array with various special floating point values
+	t.Parallel()
+	buf := make([]byte, 0, 256)
+
+	// Create a slice with regular and special float values
+	specialFloats := []float64{
+		1.23,                        // Regular number
+		0.0,                         // Zero
+		-4.56,                       // Negative number
+		math.NaN(),                  // NaN (Not a Number) - should be skipped
+		math.Inf(1),                 // Positive Infinity - should be skipped
+		math.Inf(-1),                // Negative Infinity - should be skipped
+		math.MaxFloat64,             // Maximum representable float64
+		math.SmallestNonzeroFloat64, // Smallest positive non-zero float64
+	}
+
+	// Create JSON using the raw approach that skips special values
+	obj := fson.NewObject(buf)
+	obj.Key("filtered").StartArray()
+	for _, v := range specialFloats {
+		if math.IsNaN(v) || math.IsInf(v, 0) {
+			// Skip NaN and Infinity values
+			continue
+		}
+		obj.Float64Value(v)
+	}
+	obj.EndArray()
+
+	// For comparison, also create a regular array with all values
+	obj.Floats64("all", specialFloats)
+
+	// Build the final JSON
+	result := obj.Build()
+
+	// Verify the result is valid JSON
+	if !json.Valid(result) {
+		t.Errorf("expected valid JSON, got invalid JSON: %s", result)
+	}
+
+	// Unmarshal and check the filtered array
+	var parsed map[string]interface{}
+	err := json.Unmarshal(result, &parsed)
+	if err != nil {
+		t.Fatalf("failed to unmarshal JSON: %v", err)
+	}
+
+	// Check filtered array length (should have 5 elements, not 8)
+	filtered, ok := parsed["filtered"].([]interface{})
+	if !ok {
+		t.Fatalf("expected 'filtered' to be an array")
+	}
+
+	if len(filtered) != 5 {
+		t.Errorf("expected filtered array to have 5 elements (special values skipped), got %d", len(filtered))
+	}
+
+	// Check that all elements in filtered are numbers (no strings)
+	for i, val := range filtered {
+		if _, ok := val.(float64); !ok {
+			t.Errorf("expected element %d in filtered array to be a number, got %T", i, val)
+		}
+	}
+
+	// Check that the regular array has all 8 elements with mixed types
+	all, ok := parsed["all"].([]interface{})
+	if !ok {
+		t.Fatalf("expected 'all' to be an array")
+	}
+
+	if len(all) != 8 {
+		t.Errorf("expected complete array to have 8 elements, got %d", len(all))
+	}
+
+	// The regular array should have some string elements (for NaN, +Inf, -Inf)
+	hasStrings := false
+	for _, val := range all {
+		if _, ok := val.(string); ok {
+			hasStrings = true
+			break
+		}
+	}
+
+	if !hasStrings {
+		t.Errorf("expected complete array to have string elements for special values")
+	}
+
+	// Log the result for inspection
+	t.Logf("Filtered JSON array: %s", result)
+}
+
 // Test for empty object
 func TestObject_EmptyObject(t *testing.T) {
 	t.Parallel()

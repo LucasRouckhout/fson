@@ -572,6 +572,26 @@ func (o *Object) Float32Value(value float32) *Object {
 //
 // Note: Special values like NaN and Infinity will be encoded as string values
 // rather than JSON numbers, as JSON does not support these values as numbers.
+//
+// This means that arrays containing these special values will contain a mix of
+// numeric types and string types. According to RFC 8259 Section 5
+// (https://datatracker.ietf.org/doc/html/rfc8259#section-5):
+// "There is no requirement that the values in an array be of the same type."
+//
+// While this mixed-type array is valid JSON, it may cause issues when
+// deserializing into strictly typed arrays.
+// If you need consistent types for deserialization, consider using the more
+// explicit StartArray() approach and handling special values manually:
+//
+//	obj.Key("values").StartArray()
+//	for _, v := range floatValues {
+//	    if math.IsNaN(float64(v)) || math.IsInf(float64(v), 0) {
+//	        // Handle special values differently or skip them
+//	        continue
+//	    }
+//	    obj.Float32Value(v)
+//	}
+//	obj.EndArray()
 func (o *Object) Floats32(key string, value []float32) *Object {
 	return o.Key(key).Floats32Value(value)
 }
@@ -628,6 +648,26 @@ func (o *Object) Float64Value(value float64) *Object {
 //
 // Note: Special values like NaN and Infinity will be encoded as string values
 // rather than JSON numbers, as JSON does not support these values as numbers.
+//
+// This means that arrays containing these special values will contain a mix of
+// numeric types and string types. According to RFC 8259 Section 5
+// (https://datatracker.ietf.org/doc/html/rfc8259#section-5):
+// "There is no requirement that the values in an array be of the same type."
+//
+// While this mixed-type array is valid JSON, it may cause issues when
+// deserializing into strictly typed arrays.
+// If you need consistent types for deserialization, consider using the more
+// explicit StartArray() approach and handling special values manually:
+//
+//	obj.Key("values").StartArray()
+//	for _, v := range floatValues {
+//	    if math.IsNaN(float64(v)) || math.IsInf(float64(v), 0) {
+//	        // Handle special values differently or skip them
+//	        continue
+//	    }
+//	    obj.Float64Value(v)
+//	}
+//	obj.EndArray()
 func (o *Object) Floats64(key string, value []float64) *Object {
 	return o.Key(key).Floats64Value(value)
 }
