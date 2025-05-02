@@ -12,7 +12,7 @@ control over both the produced JSON and memory allocations.
 
 ## Features
 
-- **Zero Allocations**: Works with pre-allocated buffers to minimize GC pressure
+- **Zero Allocations**: Works with pre-allocated buffers to minimize GC pressure. You are in control over memory allocations.
 - **Fluent API**: Simple chainable interface for building JSON structures
 - **Complete Control**: Handles all JSON data types with special care for edge cases
 - **UTF-8 Support**: Properly handles and escapes all Unicode characters
