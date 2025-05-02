@@ -51,6 +51,11 @@ func main() {
 }
 ```
 
+# Roadmap
+
+* [ ] Add linter to github actions
+* [ ] Benchmarks
+
 # Usage
 
 Add `fson` as a dependency
