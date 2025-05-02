@@ -173,6 +173,42 @@ func TestObject_String(t *testing.T) {
 	}
 }
 
+func TestObject_Null(t *testing.T) {
+	t.Parallel()
+	buf := buffPool.Get().([]byte)
+	defer buffPool.Put(buf)
+
+	b := fson.NewObject(buf).Null("foo").Build()
+
+	if !json.Valid(b) {
+		t.Errorf("invalid json: %s", b)
+	}
+	if !utf8.Valid(b) {
+		t.Errorf("invalid utf8: %s", b)
+	}
+}
+
+func TestObject_NullArray(t *testing.T) {
+	t.Parallel()
+	buf := buffPool.Get().([]byte)
+	defer buffPool.Put(buf)
+
+	obj := fson.NewObject(buf)
+	b := obj.Array("items").
+		StringValue("first").
+		NullValue(). // Add a null value in the array
+		StringValue("third").
+		EndArray().
+		Build()
+
+	if !json.Valid(b) {
+		t.Errorf("invalid json: %s", b)
+	}
+	if !utf8.Valid(b) {
+		t.Errorf("invalid utf8: %s", b)
+	}
+}
+
 // Test for Strings array
 func TestObject_Strings(t *testing.T) {
 	t.Parallel()

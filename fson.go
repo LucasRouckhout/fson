@@ -64,9 +64,68 @@ func NewObject(buf []byte) *Object {
 	return obj
 }
 
+// Key appends a key to the JSON object and prepares for a value to be added.
+// This function handles proper string escaping for the key according to JSON syntax rules.
+//
+// Example:
+//
+//	obj.Key("name").StringValue("John")
+//	// Results in: {"name":"John"}
+//
+// The Key function is part of the explicit key-value API that gives more control
+// over JSON construction compared to the combined methods. After calling Key(),
+// you should call one of the Value methods (StringValue, IntValue, etc.) to add
+// the corresponding value for this key.
+//
+// This approach is particularly useful when:
+// - Building complex nested structures incrementally
+// - Needing more precise control over the JSON construction process
+//
+// Note that calling Key() without a subsequent Value method call will result in
+// incomplete and invalid JSON. Always follow Key() with an appropriate Value method.
 func (o *Object) Key(key string) *Object {
 	o.buf = appendString(o.buf, key)
 	o.buf = append(o.buf, ':')
+	return o
+}
+
+// Null appends a null value with the specified key to the JSON object.
+// This creates a key-value pair where the value is explicitly set to JSON null.
+//
+// Example:
+//
+//	obj.Null("optionalField")
+//	// Results in: {"optionalField":null}
+//
+// This method is useful for explicitly representing missing or undefined values
+// according to the JSON specification.
+func (o *Object) Null(key string) *Object {
+	o.Key(key).NullValue()
+	return o
+}
+
+// NullValue appends a null value to the current key in the JSON object.
+// This sets the value to JSON null and appends a trailing comma.
+//
+// Example:
+//
+//	obj.Key("optionalField").NullValue()
+//	// Results in: {"optionalField":null}
+//
+// This method should be used after calling Key() when you want to explicitly
+// set a value to null rather than omitting the field entirely.
+//
+// In contexts like arrays, NullValue() can be used to insert null elements:
+//
+//	obj.Array("items").
+//		StringValue("first").
+//		NullValue().       // Add a null value in the array
+//		StringValue("third").
+//	EndArray()
+//	// Results in: {"items":["first",null,"third"]}
+func (o *Object) NullValue() *Object {
+	o.buf = append(o.buf, "null"...)
+	o.buf = append(o.buf, ',')
 	return o
 }
 
