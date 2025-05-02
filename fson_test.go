@@ -123,7 +123,7 @@ func FuzzJsonObject(f *testing.F) {
 			Durations("emptyDurations", emptyDurations).
 
 			// Nested object with both single values and arrays
-			StartObject("nestedObject").
+			Object("nestedObject").
 			String("string", str).
 			Bool("bool", bl).
 			Strings("strings", strings).
@@ -137,7 +137,7 @@ func FuzzJsonObject(f *testing.F) {
 			Ints("emptyInts", emptyInts).
 
 			// Double nested object
-			StartObject("doubleNested").
+			Object("doubleNested").
 			String("string", str).
 			Ints("ints", ints).
 			Strings("emptyStrings", emptyStrings).
@@ -1037,7 +1037,7 @@ func TestObject_NestedObjects(t *testing.T) {
 
 	// Test simple nested object
 	b := fson.NewObject(buf).
-		StartObject("nested").
+		Object("nested").
 		String("foo", "bar").
 		Int("num", 42).
 		EndObject().
@@ -1050,7 +1050,7 @@ func TestObject_NestedObjects(t *testing.T) {
 	// Test empty nested object
 	buf = buffPool.Get().([]byte)
 	b = fson.NewObject(buf).
-		StartObject("empty").
+		Object("empty").
 		EndObject().
 		Build()
 
@@ -1061,10 +1061,10 @@ func TestObject_NestedObjects(t *testing.T) {
 	// Test multiple nested objects
 	buf = buffPool.Get().([]byte)
 	b = fson.NewObject(buf).
-		StartObject("first").
+		Object("first").
 		String("name", "first").
 		EndObject().
-		StartObject("second").
+		Object("second").
 		String("name", "second").
 		EndObject().
 		Build()
@@ -1076,9 +1076,9 @@ func TestObject_NestedObjects(t *testing.T) {
 	// Test deeply nested objects
 	buf = buffPool.Get().([]byte)
 	b = fson.NewObject(buf).
-		StartObject("level1").
-		StartObject("level2").
-		StartObject("level3").
+		Object("level1").
+		Object("level2").
+		Object("level3").
 		String("deep", "value").
 		EndObject().
 		EndObject().
@@ -1110,10 +1110,10 @@ func TestObject_ComplexObject(t *testing.T) {
 		Duration("duration", time.Hour).
 		Strings("strings", strings).
 		Ints("ints", ints).
-		StartObject("nested").
+		Object("nested").
 		String("name", "nested object").
 		Bool("active", true).
-		StartObject("deeper").
+		Object("deeper").
 		String("level", "deep").
 		EndObject().
 		EndObject().
@@ -1125,6 +1125,70 @@ func TestObject_ComplexObject(t *testing.T) {
 
 	if !utf8.Valid(b) {
 		t.Errorf("invalid utf8 (complex object): %s", b)
+	}
+}
+
+func TestObject_ArrayOfObjects(t *testing.T) {
+	t.Parallel()
+
+	buf := buffPool.Get().([]byte)
+	defer buffPool.Put(buf)
+
+	type A struct {
+		String string
+		Int    int
+	}
+
+	arr := []A{
+		{String: "hello", Int: 42},
+		{String: "world", Int: 0},
+		{String: "hello", Int: 0},
+	}
+
+	obj := fson.NewObject(buf)
+
+	obj = obj.Array("objects")
+	for _, a := range arr {
+		obj = obj.StartObject().
+			String("string", a.String).
+			Int("int", a.Int).
+			EndObject()
+	}
+	b := obj.EndArray().Build() // -> {"objects":[{"string":"hello","int":42},{"string":"world","int":0},{"string":"hello","int":0}]}
+
+	if !json.Valid(b) {
+		t.Errorf("invalid json (array of objects): %s", b)
+	}
+
+	if !utf8.Valid(b) {
+		t.Errorf("invalid utf8 (array of objects): %s", b)
+	}
+}
+
+func TestObject_Floats64_WithNan(t *testing.T) {
+	t.Parallel()
+
+	buf := buffPool.Get().([]byte)
+	defer buffPool.Put(buf)
+
+	// Test array with various special floating point values
+	specialFloats := []float64{
+		1.23,                        // Regular number
+		0.0,                         // Zero
+		-4.56,                       // Negative number
+		math.NaN(),                  // NaN (Not a Number)
+		math.Inf(1),                 // Positive Infinity
+		math.Inf(-1),                // Negative Infinity
+		math.MaxFloat64,             // Maximum representable float64
+		math.SmallestNonzeroFloat64, // Smallest positive non-zero float64
+	}
+
+	// Encode the array
+	obj := fson.NewObject(buf).Floats64("special", specialFloats).Build()
+
+	// Check if the result is valid JSON
+	if !json.Valid(obj) {
+		t.Errorf("expected valid JSON, got invalid JSON: %s", obj)
 	}
 }
 

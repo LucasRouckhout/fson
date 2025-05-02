@@ -1,7 +1,9 @@
 # Fson
 
-Simple (less than 450 LOC), Performant and allocation-free JSON encoder. Heavily inspired by the encoders in both
-zerolog and Uber's Zap logging packages.
+Simple (less than 500 LOC), Performant and allocation-free JSON encoder. Heavily inspired by the encoders in both
+zerolog and Uber's Zap logging packages. 
+
+`fson` exposes a fluent-like API to build up valid JSON byte representations.
 
 ```golang
 package main

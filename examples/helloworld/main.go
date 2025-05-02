@@ -19,7 +19,7 @@ func main() {
 	b := fson.NewObject(buf).
 		String("hello", "world").
 		Bool("bool", true).
-		StartObject("obj").
+		Object("obj").
 		String("foo", "bar").
 		Bool("bool", false).
 		Int("int", 8).
