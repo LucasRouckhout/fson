@@ -15,6 +15,7 @@ var buffPool = sync.Pool{
 func main() {
 	// Get yourself a buffer
 	buf := buffPool.Get().([]byte)
+	defer buffPool.Put(buf)
 
 	b := fson.NewObject(buf).
 		String("hello", "world").

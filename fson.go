@@ -18,15 +18,111 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-// Package fson provides a simple, performant and allocation-free JSON encoder
+// Package fson exposed a high-performance JSON encoder that focuses on simplicity
+// and avoiding heap allocations.
 //
-// This package focuses on efficient JSON encoding without heap allocations
-// by working with pre-allocated byte buffers. It offers a fluent interface for
-// building JSON objects and arrays with a wide variety of Go types.
+// # Usage
 //
-// Unlike standard encoding/json, fson does not use reflection, which provides
-// better performance at the cost of a more manual API. It is particularly useful
-// in high-performance scenarios where memory allocations need to be minimized.
+// `fson` exposes a "two-tiered" fluent API that enables method chaining to build up a JSON object. For example
+// this code snippet:
+//
+//	fson.NewObject(buf).Key("foo").StringValue("bar").Build()
+//
+// Would produce:
+//
+//	{"foo": "bar"}
+//
+// Or a more complex example
+//
+//	fson.NewObject(buf).Key("fooArr").StartArray().StringValue("bar").StringValue("foo").EndArray().Build()
+//
+// Would produce:
+//
+//	{"fooArr":["bar","foo"]}
+//
+// This explicit key-value approach can become cumbersome and verbose. So for most operations there exists a shorthand
+// "higher-level" API. These two examples can respectively be rewritten in a shorter manner like this.
+//
+//	fson.NewObject(buf).String("foo", "bar").Build()
+//	fson.NewObject(buf).Strings("fooArr", []string{"bar", "foo"}).Build()
+//
+// For most use-cases the higher-level API will be enough. But there are examples, like multi-typed arrays, where you will
+// need to fall back to the lower level API to produce the desired output.
+//
+// # A note on performance
+//
+// The raison d'être for `fson` is to allow developers full control over both the produced JSON and heap allocations. That's
+// to say that while `fson` itself will never allocate any memory on the heap you can still accidentally do so. Here are
+// some tips and tricks to use `fson` in an efficient manner.
+//
+// Avoid using make inside a function that is called multiple times within the lifetime of your program.
+//
+//	func IfYouCallThisFunctionALotThisIsBad() {
+//		// ...
+//		buff := make([]byte, 0, 1024)
+//		fson.NewObject(buff)
+//		// ...
+//	}
+//
+// This will allocate a new buffer on the heap everytime the function is called. Instead,
+// use a [sync.Pool](https://pkg.go.dev/sync#Pool) for this use case.
+//
+//	var buffPool = sync.Pool{
+//		New: func() interface{} {
+//			return make([]byte, 0, 1024)
+//		},
+//	}
+//
+//	func Better() {
+//		// ...
+//		buf := buffPool.Get().([]byte)
+//		defer buffPool.Put(buf)
+//
+//		fson.NewObject(buff)
+//		// ...
+//	}
+//
+// This avoids allocating on the heap if the pool already contains a buffer.
+//
+// If you need to write out multiple JSON objects in the course of a single function you can reuse the same buffer. But!
+// You have to make sure to write out the result somewhere between each reuse.
+//
+//	func Reuse() {
+//		// ...
+//		buf := buffPool.Get().([]byte)
+//		defer buffPool.Put(buf)
+//
+//		first := fson.NewObject(buf).String("first", "message").Build()
+//		// Write out the response to STDOUT, after this you can safely reuse the buffer.
+//		fmt.Println(string(first))
+//
+//		// Use the same buffer
+//		second := fson.NewObject(buf).String("second", "message").Build()
+//		// Print out the second message
+//		fmt.Println(string(second))
+//
+//		// ...
+//	}
+//
+// **NOTE**: This only works if you write out the result to some writer between reuses. `fson` will reset the buffer on
+// creation of a new object and will override the values of the underlying array the byte slice is pointing to. So this is
+// wrong!
+//
+//	func BAD_DO_NOT_DO_THIS() {
+//		// ...
+//		buf := buffPool.Get().([]byte)
+//		defer buffPool.Put(buf)
+//
+//		first := fson.NewObject(buf).String("first", "message").Build()
+//		// THIS WILL OVERRIDE THE BUFFER but you have not written out the result of first
+//		second := fson.NewObject(buf).String("second", "message").Build()
+//
+//		fmt.Println(string(first))
+//		fmt.Println(string(second))
+//		// This prints out broken garbage!
+//
+//		// ...
+//	}
 package fson
 
 import (
@@ -37,23 +133,17 @@ import (
 )
 
 // Object represents a JSON object being constructed.
-// It maintains an internal byte buffer where the JSON is incrementally built.
+// It maintains an internal byte buffer where the JSON is incrementally built up.
 type Object struct {
 	buf []byte
 }
 
 // NewObject creates a new JSON object builder using the provided byte buffer.
-// The buffer will be reset to length 0 while maintaining its capacity.
+// NewObject will reset the provided buffer before use.
 //
 // The caller is responsible for ensuring the buffer has sufficient capacity
 // to hold the complete JSON structure. If the buffer is too small, append
 // operations may cause reallocations, reducing performance benefits.
-//
-// Example:
-//
-//	// Pre-allocate a buffer with capacity for expected JSON size
-//	buf := make([]byte, 0, 1024)
-//	obj := fson.NewObject(buf)
 func NewObject(buf []byte) *Object {
 	obj := &Object{
 		buf[:0], // Reset buffer
@@ -65,24 +155,19 @@ func NewObject(buf []byte) *Object {
 }
 
 // Key appends a key to the JSON object and prepares for a value to be added.
-// This function handles proper string escaping for the key according to JSON syntax rules.
+//
+// Note that calling Key() without a subsequent Value method call will result in
+// incomplete and invalid JSON. Always follow Key() with an appropriate Value method.
 //
 // Example:
 //
 //	obj.Key("name").StringValue("John")
 //	// Results in: {"name":"John"}
 //
-// The Key function is part of the explicit key-value API that gives more control
+// The Key function is part of the low-level API that gives more control
 // over JSON construction compared to the combined methods. After calling Key(),
 // you should call one of the Value methods (StringValue, IntValue, etc.) to add
 // the corresponding value for this key.
-//
-// This approach is particularly useful when:
-// - Building complex nested structures incrementally
-// - Needing more precise control over the JSON construction process
-//
-// Note that calling Key() without a subsequent Value method call will result in
-// incomplete and invalid JSON. Always follow Key() with an appropriate Value method.
 func (o *Object) Key(key string) *Object {
 	o.buf = appendString(o.buf, key)
 	o.buf = append(o.buf, ':')
@@ -105,7 +190,6 @@ func (o *Object) Null(key string) *Object {
 }
 
 // NullValue appends a null value to the current key in the JSON object.
-// This sets the value to JSON null and appends a trailing comma.
 //
 // Example:
 //
@@ -114,15 +198,6 @@ func (o *Object) Null(key string) *Object {
 //
 // This method should be used after calling Key() when you want to explicitly
 // set a value to null rather than omitting the field entirely.
-//
-// In contexts like arrays, NullValue() can be used to insert null elements:
-//
-//	obj.Array("items").
-//		StringValue("first").
-//		NullValue().       // Add a null value in the array
-//		StringValue("third").
-//	EndArray()
-//	// Results in: {"items":["first",null,"third"]}
 func (o *Object) NullValue() *Object {
 	o.buf = append(o.buf, "null"...)
 	o.buf = append(o.buf, ',')
@@ -130,7 +205,6 @@ func (o *Object) NullValue() *Object {
 }
 
 // String appends a string key-value pair to the JSON object.
-// The value will be properly escaped according to JSON string rules.
 //
 // Example:
 //
@@ -140,7 +214,6 @@ func (o *Object) String(key, value string) *Object {
 }
 
 // StringValue appends a string value to the current key in the JSON object.
-// The value will be properly escaped according to JSON string rules.
 //
 // Example:
 //
@@ -152,7 +225,6 @@ func (o *Object) StringValue(value string) *Object {
 }
 
 // Strings appends an array of strings as a key-value pair to the JSON object.
-// All string values will be properly escaped according to JSON string rules.
 //
 // Example:
 //
@@ -162,7 +234,6 @@ func (o *Object) Strings(key string, value []string) *Object {
 }
 
 // StringsValue appends an array of strings to the current key in the JSON object.
-// All string values will be properly escaped according to JSON string rules.
 //
 // Example:
 //
@@ -945,8 +1016,7 @@ func (o *Object) StartObject() *Object {
 // EndObject completes the current object by adding a closing brace.
 // It should be called after Object()/StartObject() to close the nested object.
 //
-// If the object is empty (no properties added), it will output "{}".
-// Otherwise, it will replace the trailing comma with a closing brace.
+// If the object is empty it will output "{}".
 //
 // IMPORTANT: Each call to Object()/StartObject() must be paired with a call to EndObject().
 // Unbalanced calls may result in invalid JSON.
@@ -975,7 +1045,7 @@ func (o *Object) EndObject() *Object {
 //
 // The difference between this and methods like Ints() is that Array allows
 // you to create arrays of heterogeneous or complex objects, while type-specific
-// methods like Ints() are for arrays of primitive values.
+// methods like Ints() are for arrays where all elements are of the same type.
 //
 // Don't forget to call EndArray() when you're done adding items to the array.
 func (o *Object) Array(key string) *Object {
@@ -1023,7 +1093,6 @@ func (o *Object) EndArray() *Object {
 // This should be called once, after all key-value pairs have been added.
 //
 // If the object is empty, it returns "{}".
-// Otherwise, it replaces the trailing comma with a closing brace.
 //
 // Example:
 //
@@ -1032,6 +1101,7 @@ func (o *Object) EndArray() *Object {
 //	    String("name", "John").
 //	    Int("age", 30).
 //	    Build()
+//	fmt.Println(string(json))
 //
 // IMPORTANT: The returned byte slice references the same underlying memory as
 // the input buffer. If you need to reuse the buffer for another JSON object,
@@ -1070,7 +1140,9 @@ const _hex = "0123456789abcdef"
 // - Special JSON escape sequences (\", \\, \n, \r, \t)
 // - Control characters (ASCII < 0x20)
 //
-// The function implements an optimization strategy to minimize allocations:
+// This function is heavily inspired by the zapcore library used by uber's Zap logging framework.
+//
+// The function implementation can be summarized as follows.
 //  1. It scans through the input, skipping characters that don't need escaping
 //  2. When it finds a character requiring special handling, it copies all previously
 //     accumulated "safe" characters in a single operation, then handles the special case

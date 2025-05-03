@@ -840,6 +840,11 @@ func TestObject_Float32(t *testing.T) {
 	if !json.Valid(b) {
 		t.Errorf("invalid json (-Inf): %s", b)
 	}
+
+	f := fson.NewObject(buf).Strings("fooArr", []string{"bar", "foo"}).Build()
+	if !json.Valid(f) {
+		t.Errorf("invalid json: %s", f)
+	}
 }
 
 // Test for Floats32 array
