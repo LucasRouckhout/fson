@@ -104,9 +104,9 @@ need to fall back to the lower level API to produce the desired output.
 
 ## A note on performance
 
-The raison d'être for `fson` is to allow developers full control over both the produced JSON and heap allocations. That's
-to say that while `fson` itself will never allocate any memory on the heap you can still accidentally do so. Here are
-some tips and tricks to use `fson` in an efficient manner.
+The raison d'être for `fson` is to allow developers full control over both the produced JSON and heap allocations as 
+much as possible. That's to say that while `fson` itself is very performant, using it incorrectly can cause you to lose 
+all the performance gains it potentially offers. Here are some tips and tricks to use `fson` in an efficient manner.
 
 
 ### Use a sync.Pool
