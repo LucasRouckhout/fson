@@ -46,14 +46,14 @@
 //	fson.NewObject(buf).String("foo", "bar").Build()
 //	fson.NewObject(buf).Strings("fooArr", []string{"bar", "foo"}).Build()
 //
-// For most use-cases the higher-level API will be enough. But there are examples, like multi-typed arrays, where you will
-// need to fall back to the lower level API to produce the desired output.
+// For most use-cases the higher-level API will be enough. But there are examples, like multi-typed arrays,
+// where you will need to fall back to the lower level API to produce the desired output.
 //
 // # A note on performance
 //
-// The raison d'être for `fson` is to allow developers full control over both the produced JSON and heap allocations. That's
-// to say that while `fson` itself will never allocate any memory on the heap you can still accidentally do so. Here are
-// some tips and tricks to use `fson` in an efficient manner.
+// The raison d'être for `fson` is to allow developers full control over both the produced JSON and heap allocations.
+// That's to say that while `fson` itself will never allocate any memory on the heap you can still accidentally do so.
+// Here are some tips and tricks to use `fson` in an efficient manner.
 //
 // Avoid using make inside a function that is called multiple times within the lifetime of your program.
 //
@@ -105,8 +105,8 @@
 //	}
 //
 // **NOTE**: This only works if you write out the result to some writer between reuses. `fson` will reset the buffer on
-// creation of a new object and will override the values of the underlying array the byte slice is pointing to. So this is
-// wrong!
+// creation of a new object and will override the values of the underlying array the byte slice is pointing to. So
+// this is wrong!
 //
 //	func BAD_DO_NOT_DO_THIS() {
 //		// ...
