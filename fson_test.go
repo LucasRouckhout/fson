@@ -1,7 +1,9 @@
 package fson_test
 
 import (
+	"bytes"
 	"encoding/json"
+	"fmt"
 	"github.com/LucasRouckhout/fson"
 	"math"
 	"sync"
@@ -1428,4 +1430,365 @@ func TestObject_BufferReuse(t *testing.T) {
 
 	// Clean up
 	buffPool.Put(b2)
+}
+
+var result []byte
+
+func BenchmarkObject_BuildSimple(b *testing.B) {
+	buf := buffPool.Get().([]byte)
+	defer buffPool.Put(buf)
+
+	var r []byte
+	for b.Loop() {
+		r = fson.NewObject(buf).String("foo", "bar").Build()
+	}
+
+	result = r
+}
+
+func BenchmarkJson_StdlibSimple(b *testing.B) {
+	type A struct {
+		Foo string `json:"foo"`
+	}
+
+	a := A{Foo: "bar"}
+	var r []byte
+	buf := buffPool.Get().([]byte)
+	defer buffPool.Put(buf)
+
+	buffer := bytes.NewBuffer(buf)
+	for b.Loop() {
+		_ = json.NewEncoder(buffer).Encode(&a)
+		r = buffer.Bytes()
+	}
+
+	result = r
+}
+
+func BenchmarkObject_BuildComplex(b *testing.B) {
+	buf := buffPool.Get().([]byte)
+	defer buffPool.Put(buf)
+
+	var r []byte
+	for b.Loop() {
+		r = fson.NewObject(buf).
+			String("unicode", "😀😀😀😀😀😀😀😀😀😀😀aqwdqwd😀😀😀😀").
+			Object("obj").
+			Float64("float", 1.123124313).
+			Array("items").
+			StringValue("first").
+			NullValue(). // Add a null value in the array
+			StringValue("third").
+			EndArray().
+			Build()
+	}
+	result = r
+}
+
+func BenchmarkJson_StdlibComplex(b *testing.B) {
+	type Item struct {
+		Items []interface{} `json:"items"`
+		Float float64       `json:"float"`
+	}
+
+	type ComplexStruct struct {
+		Unicode string `json:"unicode"`
+		Obj     Item   `json:"obj"`
+	}
+
+	// Create a struct with the same data as the fson example
+	complexStruct := ComplexStruct{
+		Unicode: "😀😀😀😀😀😀😀😀😀😀😀aqwdqwd😀😀😀😀",
+		Obj: Item{
+			Float: 1.123124313,
+			Items: []interface{}{"first", nil, "third"},
+		},
+	}
+
+	var r []byte
+
+	buf := buffPool.Get().([]byte)
+	defer buffPool.Put(buf)
+
+	buffer := bytes.NewBuffer(buf)
+	for b.Loop() {
+		_ = json.NewEncoder(buffer).Encode(&complexStruct)
+		r = buffer.Bytes()
+	}
+
+	result = r
+}
+
+func BenchmarkObject_BuildLarge(b *testing.B) {
+	buf := buffPool.Get().([]byte)
+	defer buffPool.Put(buf)
+
+	// Prepare some test data
+	loremIpsum := "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat."
+
+	// Fix tags array creation
+	tags := make([]string, 20)
+	for i := 0; i < 20; i++ {
+		tags[i] = fmt.Sprintf("tag-%d", i)
+	}
+
+	// Precalculate time values outside the loop
+	now := time.Now()
+	historyTimes := make([]time.Time, 10)
+	for i := 0; i < 10; i++ {
+		historyTimes[i] = now.Add(time.Duration(-i) * time.Hour)
+	}
+
+	// Precalculate formatted strings used in loops
+	itemNames := make([]string, 50)
+	itemActions := make([]string, 10)
+	itemUsers := make([]string, 10)
+	subItemLabels := make([]string, 50*5)
+
+	for i := 0; i < 50; i++ {
+		itemNames[i] = fmt.Sprintf("Item %d", i)
+		for j := 0; j < 5; j++ {
+			subItemLabels[i*5+j] = fmt.Sprintf("SubItem %d-%d", i, j)
+		}
+	}
+
+	for i := 0; i < 10; i++ {
+		itemActions[i] = fmt.Sprintf("Action %d", i)
+		itemUsers[i] = fmt.Sprintf("user%d", i)
+	}
+
+	var r []byte
+	for b.Loop() {
+		// fson.NewObject already resets the buffer internally
+		obj := fson.NewObject(buf)
+
+		// Add a variety of scalar values
+		obj.String("id", "a1b2c3d4-e5f6-7890-abcd-ef1234567890")
+		obj.Int("count", 12345)
+		obj.Float64("amount", 9876.54321)
+		obj.Bool("active", true)
+		obj.Time("created", now, time.RFC3339)
+		obj.Null("optional")
+
+		// Add an array of simple values
+		obj.Strings("tags", tags)
+
+		// Add a large string
+		obj.String("description", loremIpsum)
+
+		// Add an array of objects
+		obj.Array("items")
+		for i := 0; i < 50; i++ {
+			obj.StartObject()
+			obj.String("name", itemNames[i])
+			obj.Int("index", i)
+			obj.Float64("value", float64(i)*1.5)
+			obj.Bool("selected", i%3 == 0)
+			obj.Array("subItems")
+			for j := 0; j < 5; j++ {
+				obj.StartObject()
+				obj.String("label", subItemLabels[i*5+j])
+				obj.Int("priority", j)
+				obj.EndObject()
+			}
+			obj.EndArray()
+			obj.EndObject()
+		}
+		obj.EndArray()
+
+		// Add a deeply nested object
+		obj.Object("metadata")
+		obj.String("version", "2.0.0")
+		obj.Object("author")
+		obj.String("name", "John Doe")
+		obj.String("email", "john.doe@example.com")
+		obj.Object("contact")
+		obj.String("phone", "+1-555-123-4567")
+		obj.Object("address")
+		obj.String("street", "123 Main St")
+		obj.String("city", "Anytown")
+		obj.String("country", "USA")
+		obj.Object("geo")
+		obj.Float64("lat", 37.7749)
+		obj.Float64("lng", -122.4194)
+		obj.EndObject()
+		obj.EndObject()
+		obj.EndObject()
+		obj.EndObject()
+		obj.Array("history")
+		for i := 0; i < 10; i++ {
+			obj.StartObject()
+			obj.String("action", itemActions[i])
+			obj.Time("timestamp", historyTimes[i], time.RFC3339)
+			obj.Object("details")
+			obj.String("user", itemUsers[i])
+			obj.Int("status", 200+i)
+			obj.EndObject()
+			obj.EndObject()
+		}
+		obj.EndArray()
+		obj.EndObject()
+
+		r = obj.Build()
+	}
+
+	result = r
+}
+
+func BenchmarkJson_StdlibLarge(b *testing.B) {
+	// Define types matching the structure created with fson
+	type GeoLocation struct {
+		Lat float64 `json:"lat"`
+		Lng float64 `json:"lng"`
+	}
+
+	type Address struct {
+		Street  string      `json:"street"`
+		City    string      `json:"city"`
+		Country string      `json:"country"`
+		Geo     GeoLocation `json:"geo"`
+	}
+
+	type Contact struct {
+		Phone   string  `json:"phone"`
+		Address Address `json:"address"`
+	}
+
+	type Author struct {
+		Name    string  `json:"name"`
+		Email   string  `json:"email"`
+		Contact Contact `json:"contact"`
+	}
+
+	type ActionDetail struct {
+		User   string `json:"user"`
+		Status int    `json:"status"`
+	}
+
+	type HistoryItem struct {
+		Action    string       `json:"action"`
+		Timestamp time.Time    `json:"timestamp"`
+		Details   ActionDetail `json:"details"`
+	}
+
+	type Metadata struct {
+		Version string        `json:"version"`
+		Author  Author        `json:"author"`
+		History []HistoryItem `json:"history"`
+	}
+
+	type SubItem struct {
+		Label    string `json:"label"`
+		Priority int    `json:"priority"`
+	}
+
+	type Item struct {
+		Name     string    `json:"name"`
+		Index    int       `json:"index"`
+		Value    float64   `json:"value"`
+		Selected bool      `json:"selected"`
+		SubItems []SubItem `json:"subItems"`
+	}
+
+	type LargeStruct struct {
+		ID          string    `json:"id"`
+		Count       int       `json:"count"`
+		Amount      float64   `json:"amount"`
+		Active      bool      `json:"active"`
+		Created     time.Time `json:"created"`
+		Optional    any       `json:"optional"`
+		Tags        []string  `json:"tags"`
+		Description string    `json:"description"`
+		Items       []Item    `json:"items"`
+		Metadata    Metadata  `json:"metadata"`
+	}
+
+	// Create test data
+	loremIpsum := "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat."
+	now := time.Now()
+
+	// Prepare tags
+	tags := make([]string, 20)
+	for i := 0; i < 20; i++ {
+		tags[i] = fmt.Sprintf("tag-%d", i)
+	}
+
+	// Prepare items
+	items := make([]Item, 50)
+	for i := 0; i < 50; i++ {
+		subItems := make([]SubItem, 5)
+		for j := 0; j < 5; j++ {
+			subItems[j] = SubItem{
+				Label:    fmt.Sprintf("SubItem %d-%d", i, j),
+				Priority: j,
+			}
+		}
+
+		items[i] = Item{
+			Name:     fmt.Sprintf("Item %d", i),
+			Index:    i,
+			Value:    float64(i) * 1.5,
+			Selected: i%3 == 0,
+			SubItems: subItems,
+		}
+	}
+
+	// Prepare history items
+	historyItems := make([]HistoryItem, 10)
+	for i := 0; i < 10; i++ {
+		historyItems[i] = HistoryItem{
+			Action:    fmt.Sprintf("Action %d", i),
+			Timestamp: now.Add(time.Duration(-i) * time.Hour),
+			Details: ActionDetail{
+				User:   fmt.Sprintf("user%d", i),
+				Status: 200 + i,
+			},
+		}
+	}
+
+	// Create the large struct
+	largeStruct := LargeStruct{
+		ID:          "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+		Count:       12345,
+		Amount:      9876.54321,
+		Active:      true,
+		Created:     now,
+		Optional:    nil,
+		Tags:        tags,
+		Description: loremIpsum,
+		Items:       items,
+		Metadata: Metadata{
+			Version: "2.0.0",
+			Author: Author{
+				Name:  "John Doe",
+				Email: "john.doe@example.com",
+				Contact: Contact{
+					Phone: "+1-555-123-4567",
+					Address: Address{
+						Street:  "123 Main St",
+						City:    "Anytown",
+						Country: "USA",
+						Geo: GeoLocation{
+							Lat: 37.7749,
+							Lng: -122.4194,
+						},
+					},
+				},
+			},
+			History: historyItems,
+		},
+	}
+
+	var r []byte
+
+	buf := buffPool.Get().([]byte)
+	defer buffPool.Put(buf)
+
+	buffer := bytes.NewBuffer(buf)
+	for b.Loop() {
+		_ = json.NewEncoder(buffer).Encode(&largeStruct)
+		r = buffer.Bytes()
+	}
+
+	result = r
 }

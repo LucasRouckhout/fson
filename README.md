@@ -1,4 +1,4 @@
-# fson - Fast, Allocation-free JSON Encoder for Go
+# fson - High-performance JSON Encoder for Go
 
 [![Go Report Card](https://goreportcard.com/badge/github.com/LucasRouckhout/fson)](https://goreportcard.com/report/github.com/LucasRouckhout/fson)
 [![GoDoc](https://godoc.org/github.com/LucasRouckhout/fson?status.svg)](https://godoc.org/github.com/LucasRouckhout/fson)
@@ -189,6 +189,43 @@ func BAD_DO_NOT_DO_THIS() {
 
 	// ...
 }
+```
+
+### How to shoot yourself in the foot
+
+Coming soon...
+
+### Benchmarks
+
+Benchmarks are notoriously easy to manipulate and can be misleading but everybody wants to see the numbers so here they
+are. These initial benchmarks were mostly written as a guide to make sure fson out-performs stdlib. They are very 
+much open for improvements. 
+
+As already mentioned, your millage may vary because how you use `fson` has a big impact on the performance gains it 
+provides.
+
+You can run the benchmarks yourself by running `make benchmark`. Running these on a Apple M3 Pro gives you roughly these
+results.
+
+```text
+Benchmark                      Time/Op         Allocs/Op       Bytes/Op        vs Standard     Improvement    
+-----------------------------  --------------- --------------- --------------- --------------- ---------------
+BenchmarkObject_BuildSimple    33.52 ns/op     24 allocs/op    1 B/op          1x (baseline)   -              
+BenchmarkJson_StdlibSimple     87.69 ns/op     133 allocs/op   1 B/op          2.62x           61.77%         
+-----------------------------  --------------- --------------- --------------- --------------- ---------------
+BenchmarkObject_BuildComplex   220.5 ns/op     232 allocs/op   2 B/op          1x (baseline)   -              
+BenchmarkJson_StdlibComplex    337.4 ns/op     394 allocs/op   1 B/op          1.53x           34.65%         
+-----------------------------  --------------- --------------- --------------- --------------- ---------------
+BenchmarkObject_BuildLarge     22497 ns/op     61576 allocs/op 13 B/op         1x (baseline)   -              
+BenchmarkJson_StdlibLarge      34079 ns/op     45891 allocs/op 12 B/op         1.51x           33.99%         
+-----------------------------  --------------- --------------- --------------- --------------- ---------------
+
+Summary                        fson            stdlib          Improvement    
+-----------------------------  --------------- --------------- ---------------
+Simple Case                    33.52 ns/op     87.69 ns/op     61.77%         
+Complex Case                   220.5 ns/op     337.4 ns/op     34.65%         
+Large Case                     22497 ns/op     34079 ns/op     33.99%         
+Average Improvement            -               -               43.47% 
 ```
 
 # Examples
