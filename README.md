@@ -4,7 +4,7 @@
 [![GoDoc](https://godoc.org/github.com/LucasRouckhout/fson?status.svg)](https://godoc.org/github.com/LucasRouckhout/fson)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
-**fson** is a high-performance JSON encoder for Go that focuses on simplicity and avoiding heap allocations. `fson` does one
+`fson` is a high-performance JSON encoder for Go that focuses on simplicity and avoiding heap allocations. `fson` does one
 thing and does it well: encode JSON. It explicitly does not try to solve other problems in the same space. If you need 
 a serialization library `fson` is probably not the tool for you. The whole library is implemented as a single file 
 of only ~1000LOC which makes it easy to validate and vendor if desired.
