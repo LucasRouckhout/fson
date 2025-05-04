@@ -6,16 +6,12 @@ package main
 
 import (
 	"github.com/LucasRouckhout/fson"
+	"github.com/LucasRouckhout/fson/fsonutil"
 	"log"
 	"net/http"
-	"sync"
 )
 
-var buffPool = sync.Pool{
-	New: func() interface{} {
-		return make([]byte, 0, 100)
-	},
-}
+var buffPool = fsonutil.NewPool()
 
 // User is a simple struct that we want to encode into JSON
 type User struct {
@@ -33,11 +29,11 @@ func main() {
 		}
 
 		// Get yourself a buffer
-		buff := buffPool.Get().([]byte) // Avoid allocations by taking from a pool
+		buff := buffPool.Get()
 		defer buffPool.Put(buff)
 
 		// Encode the struct into JSON
-		b := fson.NewObject(buff).
+		b := fson.NewObject(buff.Bytes()).
 			String("name", user.Name).
 			String("email", user.Email).
 			Build()
