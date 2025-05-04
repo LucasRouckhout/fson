@@ -36,9 +36,9 @@ const (
 // Pool is an implementation for a buffer pool of []byte slices.
 //
 // Most people will want to use this instead of a raw sync.Pool
-// to avoid memory leaks when using fson.
+// to avoid pinning large chunks of memory when using fson.
 //
-// It avoids pinning large chunks of memory (memory leaks) by using a
+// It avoids pinning large unused chunks of memory by using a
 // very simple "statistical" approach that will discard sequentially
 // under-utilized buffers in the pool, devised by 'dsnet'
 // https://github.com/golang/go/issues/27735#issuecomment-739169121
