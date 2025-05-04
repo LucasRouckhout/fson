@@ -1,22 +1,32 @@
-# fson - High-performance, Zero-Allocation JSON Encoder for Go
+# fson - Fast, Allocation-free JSON Encoder for Go
 
 [![Go Report Card](https://goreportcard.com/badge/github.com/LucasRouckhout/fson)](https://goreportcard.com/report/github.com/LucasRouckhout/fson)
 [![GoDoc](https://godoc.org/github.com/LucasRouckhout/fson?status.svg)](https://godoc.org/github.com/LucasRouckhout/fson)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
-`fson` is a high-performance JSON encoder for Go that focuses on simplicity and full control over heap allocations. 
+`fson` is a high-performance JSON encoder for Go that focuses on simplicity and full control over heap allocations.
+
+<img alt="assets/fson_mascot.png" height="450" src="assets/fson_mascot.png" width="500"/>
 
 - **Fluent API**: Simple chainable methods for building JSON structures
 - **Complete Control**: Full control over the produced JSON and heap allocations.
 - **Simple Implementation**: The entire core library is contained in a single file of ~1000 lines (mostly documentation)
 - **Easy to Vendor**: The small codebase makes it easy to vendor `fson` into an existing codebase
 - **No Reflection**: `fson` avoids reflection completely
-- **Zero Allocations**: `fson` by itself will not allocate any memory on the heap, unless you force it to.
+- **Zero Allocations**: `fson` by itself will not allocate any memory on the heap.
 
 The finer details (especially UTF8 handling) of this library are heavily inspired by the json encoder of Uber's Zap logging library
 [zapcore](https://github.com/uber-go/zap/tree/master/zapcore).
 
-## Quick Example
+## Quick Start
+
+Add `fson` as a dependency 
+
+```
+go get -u github.com/LucasRouckhout/fson
+```
+
+Use the provided buffer pool in the `fsonutil` package and generate some JSON.
 
 ```go
 package main
@@ -124,12 +134,11 @@ pinning large chunks of memory. Most people will want to use this specialized bu
 var buffPool = fsonutil.NewPool()
 
 func Better() {
-	buf := buffPool.Get()
-	defer buffPool.Put(buf)
+    buf := buffPool.Get()
+    defer buffPool.Put(buf)
 	
-	obj := fson.NewObject(buf.Bytes())
-	b := obj.String("hello", "world") // do things
-    //...
+    obj := fson.NewObject(buf.Bytes())
+    b := obj.String("hello", "world") // do things
 }
 ```
 
@@ -142,10 +151,9 @@ You have to make sure to write out the result somewhere between each reuse.
 
 ```go
 func Reuse() {
-    // ...
-	buf := buffPool.Get()
-	defer buffPool.Put(buf)
-
+    buf := buffPool.Get()
+    defer buffPool.Put(buf)
+	
     obj := fson.NewObject(buf.Bytes())
 
     first := obj.String("first", "message").Build()
@@ -191,7 +199,7 @@ func BAD_DO_NOT_DO_THIS() {
 Benchmarks are notoriously easy to manipulate and can be misleading but everybody wants to see the numbers so here they
 are. These benchmarks are definitely "manipulated" to some degree. The most obvious tweak I made is to allocate a big
 enough buffer for each benchmark so that the underlying append calls would never have to reallocate a new array.
-Although to some degree they are fair because the stdlib tests get the same exact buffer size.
+Although to some degree they are fair because the stdlib tests gets the same exact buffer size to work with.
 
 You can run the benchmarks yourself by running `make benchmark`. Running these on a Apple M3 Pro gives you roughly these
 results.
@@ -257,8 +265,8 @@ func main() {
 	obj := fson.NewObject(buf).
         // This will replace the special float values with strings
         Floats64("withSpecialValues", values)
-	    
-    obj.Array("filteredValues")	
+	
+	obj.Array("filteredValues")	
 	for _, v := range values {
 		// Filter out special values
 		if !math.IsNaN(v) && !math.IsInf(v, 0) {
