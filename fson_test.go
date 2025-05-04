@@ -5,18 +5,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/LucasRouckhout/fson"
+	"github.com/LucasRouckhout/fson/fsonutil"
 	"math"
-	"sync"
 	"testing"
 	"time"
 	"unicode/utf8"
 )
 
-var buffPool = sync.Pool{
-	New: func() interface{} {
-		return make([]byte, 0, 100)
-	},
-}
+var buffPool = fsonutil.NewPool()
 
 func FuzzJsonObject(f *testing.F) {
 	f.Add("data", true, 42, int8(8), int16(16), int32(32), int64(64),
@@ -29,7 +25,7 @@ func FuzzJsonObject(f *testing.F) {
 		dur := time.Duration(durationNano)
 
 		// Get a buffer from the pool
-		buf := buffPool.Get().([]byte)
+		buf := buffPool.Get()
 		defer buffPool.Put(buf)
 
 		// Create populated arrays of each type
@@ -69,7 +65,7 @@ func FuzzJsonObject(f *testing.F) {
 		emptyDurations := []time.Duration{}
 
 		// Build the JSON object
-		b := fson.NewObject(buf).
+		b := fson.NewObject(buf.Bytes()).
 			// Single values
 			String("string", str).
 			Bool("bool", bl).
@@ -162,10 +158,10 @@ func FuzzJsonObject(f *testing.F) {
 // Test for String
 func TestObject_String(t *testing.T) {
 	t.Parallel()
-	buf := buffPool.Get().([]byte)
+	buf := buffPool.Get()
 	defer buffPool.Put(buf)
 
-	b := fson.NewObject(buf).String("foo", "bar").Build()
+	b := fson.NewObject(buf.Bytes()).String("foo", "bar").Build()
 
 	if !json.Valid(b) {
 		t.Errorf("invalid json: %s", b)
@@ -177,10 +173,10 @@ func TestObject_String(t *testing.T) {
 
 func TestObject_Null(t *testing.T) {
 	t.Parallel()
-	buf := buffPool.Get().([]byte)
+	buf := buffPool.Get()
 	defer buffPool.Put(buf)
 
-	b := fson.NewObject(buf).Null("foo").Build()
+	b := fson.NewObject(buf.Bytes()).Null("foo").Build()
 
 	if !json.Valid(b) {
 		t.Errorf("invalid json: %s", b)
@@ -192,10 +188,10 @@ func TestObject_Null(t *testing.T) {
 
 func TestObject_NullArray(t *testing.T) {
 	t.Parallel()
-	buf := buffPool.Get().([]byte)
+	buf := buffPool.Get()
 	defer buffPool.Put(buf)
 
-	obj := fson.NewObject(buf)
+	obj := fson.NewObject(buf.Bytes())
 	b := obj.Array("items").
 		StringValue("first").
 		NullValue(). // Add a null value in the array
@@ -214,12 +210,12 @@ func TestObject_NullArray(t *testing.T) {
 // Test for Strings array
 func TestObject_Strings(t *testing.T) {
 	t.Parallel()
-	buf := buffPool.Get().([]byte)
+	buf := buffPool.Get()
 	defer buffPool.Put(buf)
 
 	// Test populated array
 	strings := []string{"hello", "world", "!"}
-	b := fson.NewObject(buf).Strings("foo", strings).Build()
+	b := fson.NewObject(buf.Bytes()).Strings("foo", strings).Build()
 
 	if !json.Valid(b) {
 		t.Errorf("invalid json: %s", b)
@@ -227,11 +223,15 @@ func TestObject_Strings(t *testing.T) {
 	if !utf8.Valid(b) {
 		t.Errorf("invalid utf8: %s", b)
 	}
+}
 
-	// Test empty array
-	buf = buffPool.Get().([]byte)
-	emptyStrings := []string{}
-	b = fson.NewObject(buf).Strings("foo", emptyStrings).Build()
+func TestObject_StringsEmpty(t *testing.T) {
+	t.Parallel()
+	buf := buffPool.Get()
+	defer buffPool.Put(buf)
+
+	var emptyStrings []string
+	b := fson.NewObject(buf.Bytes()).Strings("foo", emptyStrings).Build()
 
 	if !json.Valid(b) {
 		t.Errorf("invalid json (empty array): %s", b)
@@ -245,42 +245,40 @@ func TestObject_Strings(t *testing.T) {
 func TestObject_Bool(t *testing.T) {
 	t.Parallel()
 
-	// Test true value
-	buf := buffPool.Get().([]byte)
+	buf := buffPool.Get()
 	defer buffPool.Put(buf)
-	b := fson.NewObject(buf).Bool("foo", true).Build()
+
+	b := fson.NewObject(buf.Bytes()).Bool("foo", true).Bool("bar", false).Build()
 
 	if !json.Valid(b) {
-		t.Errorf("invalid json (true): %s", b)
-	}
-
-	// Test false value
-	buf = buffPool.Get().([]byte)
-	b = fson.NewObject(buf).Bool("foo", false).Build()
-
-	if !json.Valid(b) {
-		t.Errorf("invalid json (false): %s", b)
+		t.Errorf("invalid json (bool): %s", b)
 	}
 }
 
 // Test for Bools array
 func TestObject_Bools(t *testing.T) {
 	t.Parallel()
-	buf := buffPool.Get().([]byte)
+
+	buf := buffPool.Get()
 	defer buffPool.Put(buf)
 
 	// Test populated array
 	bools := []bool{true, false, true}
-	b := fson.NewObject(buf).Bools("foo", bools).Build()
+	b := fson.NewObject(buf.Bytes()).Bools("foo", bools).Build()
 
 	if !json.Valid(b) {
 		t.Errorf("invalid json: %s", b)
 	}
+}
 
-	// Test empty array
-	buf = buffPool.Get().([]byte)
-	emptyBools := []bool{}
-	b = fson.NewObject(buf).Bools("foo", emptyBools).Build()
+func TestObject_BoolsEmpty(t *testing.T) {
+	t.Parallel()
+
+	buf := buffPool.Get()
+	defer buffPool.Put(buf)
+
+	var emptyBools []bool
+	b := fson.NewObject(buf.Bytes()).Bools("foo", emptyBools).Build()
 
 	if !json.Valid(b) {
 		t.Errorf("invalid json (empty array): %s", b)
@@ -290,948 +288,35 @@ func TestObject_Bools(t *testing.T) {
 // Test for Int
 func TestObject_Int(t *testing.T) {
 	t.Parallel()
-	buf := buffPool.Get().([]byte)
+
+	buf := buffPool.Get()
 	defer buffPool.Put(buf)
 
-	b := fson.NewObject(buf).Int("foo", 42).Build()
+	b := fson.NewObject(buf.Bytes()).
+		Int("foo", 42).
+		Int("bar", 0).
+		Int("bar", -42).
+		Build()
 
 	if !json.Valid(b) {
 		t.Errorf("invalid json: %s", b)
-	}
-
-	// Test zero
-	buf = buffPool.Get().([]byte)
-	b = fson.NewObject(buf).Int("foo", 0).Build()
-
-	if !json.Valid(b) {
-		t.Errorf("invalid json (zero): %s", b)
-	}
-
-	// Test negative
-	buf = buffPool.Get().([]byte)
-	b = fson.NewObject(buf).Int("foo", -42).Build()
-
-	if !json.Valid(b) {
-		t.Errorf("invalid json (negative): %s", b)
 	}
 }
 
 // Test for Ints array
 func TestObject_Ints(t *testing.T) {
 	t.Parallel()
-	buf := buffPool.Get().([]byte)
+
+	buf := buffPool.Get()
 	defer buffPool.Put(buf)
 
 	// Test populated array
 	ints := []int{1, 0, -1, 42}
-	b := fson.NewObject(buf).Ints("foo", ints).Build()
+	var emptyInts []int
+	b := fson.NewObject(buf.Bytes()).Ints("foo", ints).Ints("bar", emptyInts).Build()
 
 	if !json.Valid(b) {
 		t.Errorf("invalid json: %s", b)
-	}
-
-	// Test empty array
-	buf = buffPool.Get().([]byte)
-	emptyInts := []int{}
-	b = fson.NewObject(buf).Ints("foo", emptyInts).Build()
-
-	if !json.Valid(b) {
-		t.Errorf("invalid json (empty array): %s", b)
-	}
-}
-
-// Test for Int8
-func TestObject_Int8(t *testing.T) {
-	t.Parallel()
-	buf := buffPool.Get().([]byte)
-	defer buffPool.Put(buf)
-
-	b := fson.NewObject(buf).Int8("foo", 8).Build()
-
-	if !json.Valid(b) {
-		t.Errorf("invalid json: %s", b)
-	}
-
-	// Test zero
-	buf = buffPool.Get().([]byte)
-	b = fson.NewObject(buf).Int8("foo", 0).Build()
-
-	if !json.Valid(b) {
-		t.Errorf("invalid json (zero): %s", b)
-	}
-
-	// Test negative
-	buf = buffPool.Get().([]byte)
-	b = fson.NewObject(buf).Int8("foo", -8).Build()
-
-	if !json.Valid(b) {
-		t.Errorf("invalid json (negative): %s", b)
-	}
-}
-
-// Test for Ints8 array
-func TestObject_Ints8(t *testing.T) {
-	t.Parallel()
-	buf := buffPool.Get().([]byte)
-	defer buffPool.Put(buf)
-
-	// Test populated array
-	ints8 := []int8{1, 0, -1, 8}
-	b := fson.NewObject(buf).Ints8("foo", ints8).Build()
-
-	if !json.Valid(b) {
-		t.Errorf("invalid json: %s", b)
-	}
-
-	// Test empty array
-	buf = buffPool.Get().([]byte)
-	emptyInts8 := []int8{}
-	b = fson.NewObject(buf).Ints8("foo", emptyInts8).Build()
-
-	if !json.Valid(b) {
-		t.Errorf("invalid json (empty array): %s", b)
-	}
-}
-
-// Test for Int16
-func TestObject_Int16(t *testing.T) {
-	t.Parallel()
-	buf := buffPool.Get().([]byte)
-	defer buffPool.Put(buf)
-
-	b := fson.NewObject(buf).Int16("foo", 16).Build()
-
-	if !json.Valid(b) {
-		t.Errorf("invalid json: %s", b)
-	}
-
-	// Test zero
-	buf = buffPool.Get().([]byte)
-	b = fson.NewObject(buf).Int16("foo", 0).Build()
-
-	if !json.Valid(b) {
-		t.Errorf("invalid json (zero): %s", b)
-	}
-
-	// Test negative
-	buf = buffPool.Get().([]byte)
-	b = fson.NewObject(buf).Int16("foo", -16).Build()
-
-	if !json.Valid(b) {
-		t.Errorf("invalid json (negative): %s", b)
-	}
-}
-
-// Test for Ints16 array
-func TestObject_Ints16(t *testing.T) {
-	t.Parallel()
-	buf := buffPool.Get().([]byte)
-	defer buffPool.Put(buf)
-
-	// Test populated array
-	ints16 := []int16{1, 0, -1, 16}
-	b := fson.NewObject(buf).Ints16("foo", ints16).Build()
-
-	if !json.Valid(b) {
-		t.Errorf("invalid json: %s", b)
-	}
-
-	// Test empty array
-	buf = buffPool.Get().([]byte)
-	emptyInts16 := []int16{}
-	b = fson.NewObject(buf).Ints16("foo", emptyInts16).Build()
-
-	if !json.Valid(b) {
-		t.Errorf("invalid json (empty array): %s", b)
-	}
-}
-
-// Test for Int32
-func TestObject_Int32(t *testing.T) {
-	t.Parallel()
-	buf := buffPool.Get().([]byte)
-	defer buffPool.Put(buf)
-
-	b := fson.NewObject(buf).Int32("foo", 32).Build()
-
-	if !json.Valid(b) {
-		t.Errorf("invalid json: %s", b)
-	}
-
-	// Test zero
-	buf = buffPool.Get().([]byte)
-	b = fson.NewObject(buf).Int32("foo", 0).Build()
-
-	if !json.Valid(b) {
-		t.Errorf("invalid json (zero): %s", b)
-	}
-
-	// Test negative
-	buf = buffPool.Get().([]byte)
-	b = fson.NewObject(buf).Int32("foo", -32).Build()
-
-	if !json.Valid(b) {
-		t.Errorf("invalid json (negative): %s", b)
-	}
-}
-
-// Test for Ints32 array
-func TestObject_Ints32(t *testing.T) {
-	t.Parallel()
-	buf := buffPool.Get().([]byte)
-	defer buffPool.Put(buf)
-
-	// Test populated array
-	ints32 := []int32{1, 0, -1, 32}
-	b := fson.NewObject(buf).Ints32("foo", ints32).Build()
-
-	if !json.Valid(b) {
-		t.Errorf("invalid json: %s", b)
-	}
-
-	// Test empty array
-	buf = buffPool.Get().([]byte)
-	emptyInts32 := []int32{}
-	b = fson.NewObject(buf).Ints32("foo", emptyInts32).Build()
-
-	if !json.Valid(b) {
-		t.Errorf("invalid json (empty array): %s", b)
-	}
-}
-
-// Test for Int64
-func TestObject_Int64(t *testing.T) {
-	t.Parallel()
-	buf := buffPool.Get().([]byte)
-	defer buffPool.Put(buf)
-
-	b := fson.NewObject(buf).Int64("foo", 64).Build()
-
-	if !json.Valid(b) {
-		t.Errorf("invalid json: %s", b)
-	}
-
-	// Test zero
-	buf = buffPool.Get().([]byte)
-	b = fson.NewObject(buf).Int64("foo", 0).Build()
-
-	if !json.Valid(b) {
-		t.Errorf("invalid json (zero): %s", b)
-	}
-
-	// Test negative
-	buf = buffPool.Get().([]byte)
-	b = fson.NewObject(buf).Int64("foo", -64).Build()
-
-	if !json.Valid(b) {
-		t.Errorf("invalid json (negative): %s", b)
-	}
-
-	// Test large number
-	buf = buffPool.Get().([]byte)
-	b = fson.NewObject(buf).Int64("foo", 9223372036854775807).Build()
-
-	if !json.Valid(b) {
-		t.Errorf("invalid json (large number): %s", b)
-	}
-}
-
-// Test for Ints64 array
-func TestObject_Ints64(t *testing.T) {
-	t.Parallel()
-	buf := buffPool.Get().([]byte)
-	defer buffPool.Put(buf)
-
-	// Test populated array
-	ints64 := []int64{1, 0, -1, 64, 9223372036854775807}
-	b := fson.NewObject(buf).Ints64("foo", ints64).Build()
-
-	if !json.Valid(b) {
-		t.Errorf("invalid json: %s", b)
-	}
-
-	// Test empty array
-	buf = buffPool.Get().([]byte)
-	emptyInts64 := []int64{}
-	b = fson.NewObject(buf).Ints64("foo", emptyInts64).Build()
-
-	if !json.Valid(b) {
-		t.Errorf("invalid json (empty array): %s", b)
-	}
-}
-
-// Test for Uint
-func TestObject_Uint(t *testing.T) {
-	t.Parallel()
-	buf := buffPool.Get().([]byte)
-	defer buffPool.Put(buf)
-
-	b := fson.NewObject(buf).Uint("foo", 42).Build()
-
-	if !json.Valid(b) {
-		t.Errorf("invalid json: %s", b)
-	}
-
-	// Test zero
-	buf = buffPool.Get().([]byte)
-	b = fson.NewObject(buf).Uint("foo", 0).Build()
-
-	if !json.Valid(b) {
-		t.Errorf("invalid json (zero): %s", b)
-	}
-}
-
-// Test for Uints array
-func TestObject_Uints(t *testing.T) {
-	t.Parallel()
-	buf := buffPool.Get().([]byte)
-	defer buffPool.Put(buf)
-
-	// Test populated array
-	uints := []uint{1, 0, 42, 100}
-	b := fson.NewObject(buf).Uints("foo", uints).Build()
-
-	if !json.Valid(b) {
-		t.Errorf("invalid json: %s", b)
-	}
-
-	// Test empty array
-	buf = buffPool.Get().([]byte)
-	emptyUints := []uint{}
-	b = fson.NewObject(buf).Uints("foo", emptyUints).Build()
-
-	if !json.Valid(b) {
-		t.Errorf("invalid json (empty array): %s", b)
-	}
-}
-
-// Test for Uint8
-func TestObject_Uint8(t *testing.T) {
-	t.Parallel()
-	buf := buffPool.Get().([]byte)
-	defer buffPool.Put(buf)
-
-	b := fson.NewObject(buf).Uint8("foo", 8).Build()
-
-	if !json.Valid(b) {
-		t.Errorf("invalid json: %s", b)
-	}
-
-	// Test zero
-	buf = buffPool.Get().([]byte)
-	b = fson.NewObject(buf).Uint8("foo", 0).Build()
-
-	if !json.Valid(b) {
-		t.Errorf("invalid json (zero): %s", b)
-	}
-}
-
-// Test for Uints8 array
-func TestObject_Uints8(t *testing.T) {
-	t.Parallel()
-	buf := buffPool.Get().([]byte)
-	defer buffPool.Put(buf)
-
-	// Test populated array
-	uints8 := []uint8{1, 0, 8, 255}
-	b := fson.NewObject(buf).Uints8("foo", uints8).Build()
-
-	if !json.Valid(b) {
-		t.Errorf("invalid json: %s", b)
-	}
-
-	// Test empty array
-	buf = buffPool.Get().([]byte)
-	emptyUints8 := []uint8{}
-	b = fson.NewObject(buf).Uints8("foo", emptyUints8).Build()
-
-	if !json.Valid(b) {
-		t.Errorf("invalid json (empty array): %s", b)
-	}
-}
-
-// Test for Uint16
-func TestObject_Uint16(t *testing.T) {
-	t.Parallel()
-	buf := buffPool.Get().([]byte)
-	defer buffPool.Put(buf)
-
-	b := fson.NewObject(buf).Uint16("foo", 16).Build()
-
-	if !json.Valid(b) {
-		t.Errorf("invalid json: %s", b)
-	}
-
-	// Test zero
-	buf = buffPool.Get().([]byte)
-	b = fson.NewObject(buf).Uint16("foo", 0).Build()
-
-	if !json.Valid(b) {
-		t.Errorf("invalid json (zero): %s", b)
-	}
-}
-
-// Test for Uints16 array
-func TestObject_Uints16(t *testing.T) {
-	t.Parallel()
-	buf := buffPool.Get().([]byte)
-	defer buffPool.Put(buf)
-
-	// Test populated array
-	uints16 := []uint16{1, 0, 16, 65535}
-	b := fson.NewObject(buf).Uints16("foo", uints16).Build()
-
-	if !json.Valid(b) {
-		t.Errorf("invalid json: %s", b)
-	}
-
-	// Test empty array
-	buf = buffPool.Get().([]byte)
-	emptyUints16 := []uint16{}
-	b = fson.NewObject(buf).Uints16("foo", emptyUints16).Build()
-
-	if !json.Valid(b) {
-		t.Errorf("invalid json (empty array): %s", b)
-	}
-}
-
-// Test for Uint32
-func TestObject_Uint32(t *testing.T) {
-	t.Parallel()
-	buf := buffPool.Get().([]byte)
-	defer buffPool.Put(buf)
-
-	b := fson.NewObject(buf).Uint32("foo", 32).Build()
-
-	if !json.Valid(b) {
-		t.Errorf("invalid json: %s", b)
-	}
-
-	// Test zero
-	buf = buffPool.Get().([]byte)
-	b = fson.NewObject(buf).Uint32("foo", 0).Build()
-
-	if !json.Valid(b) {
-		t.Errorf("invalid json (zero): %s", b)
-	}
-}
-
-// Test for Uints32 array
-func TestObject_Uints32(t *testing.T) {
-	t.Parallel()
-	buf := buffPool.Get().([]byte)
-	defer buffPool.Put(buf)
-
-	// Test populated array
-	uints32 := []uint32{1, 0, 32, 4294967295}
-	b := fson.NewObject(buf).Uints32("foo", uints32).Build()
-
-	if !json.Valid(b) {
-		t.Errorf("invalid json: %s", b)
-	}
-
-	// Test empty array
-	buf = buffPool.Get().([]byte)
-	emptyUints32 := []uint32{}
-	b = fson.NewObject(buf).Uints32("foo", emptyUints32).Build()
-
-	if !json.Valid(b) {
-		t.Errorf("invalid json (empty array): %s", b)
-	}
-}
-
-// Test for Uint64
-func TestObject_Uint64(t *testing.T) {
-	t.Parallel()
-	buf := buffPool.Get().([]byte)
-	defer buffPool.Put(buf)
-
-	b := fson.NewObject(buf).Uint64("foo", 64).Build()
-
-	if !json.Valid(b) {
-		t.Errorf("invalid json: %s", b)
-	}
-
-	// Test zero
-	buf = buffPool.Get().([]byte)
-	b = fson.NewObject(buf).Uint64("foo", 0).Build()
-
-	if !json.Valid(b) {
-		t.Errorf("invalid json (zero): %s", b)
-	}
-
-	// Test large number
-	buf = buffPool.Get().([]byte)
-	b = fson.NewObject(buf).Uint64("foo", 18446744073709551615).Build()
-
-	if !json.Valid(b) {
-		t.Errorf("invalid json (large number): %s", b)
-	}
-}
-
-// Test for Uints64 array
-func TestObject_Uints64(t *testing.T) {
-	t.Parallel()
-	buf := buffPool.Get().([]byte)
-	defer buffPool.Put(buf)
-
-	// Test populated array
-	uints64 := []uint64{1, 0, 64, 18446744073709551615}
-	b := fson.NewObject(buf).Uints64("foo", uints64).Build()
-
-	if !json.Valid(b) {
-		t.Errorf("invalid json: %s", b)
-	}
-
-	// Test empty array
-	buf = buffPool.Get().([]byte)
-	emptyUints64 := []uint64{}
-	b = fson.NewObject(buf).Uints64("foo", emptyUints64).Build()
-
-	if !json.Valid(b) {
-		t.Errorf("invalid json (empty array): %s", b)
-	}
-}
-
-// Test for Float32
-func TestObject_Float32(t *testing.T) {
-	t.Parallel()
-	buf := buffPool.Get().([]byte)
-	defer buffPool.Put(buf)
-
-	b := fson.NewObject(buf).Float32("foo", 3.14).Build()
-
-	if !json.Valid(b) {
-		t.Errorf("invalid json: %s", b)
-	}
-
-	// Test zero
-	buf = buffPool.Get().([]byte)
-	b = fson.NewObject(buf).Float32("foo", 0).Build()
-
-	if !json.Valid(b) {
-		t.Errorf("invalid json (zero): %s", b)
-	}
-
-	// Test negative
-	buf = buffPool.Get().([]byte)
-	b = fson.NewObject(buf).Float32("foo", -3.14).Build()
-
-	if !json.Valid(b) {
-		t.Errorf("invalid json (negative): %s", b)
-	}
-
-	// Test special values
-	buf = buffPool.Get().([]byte)
-	b = fson.NewObject(buf).Float32("nanValue", float32(math.NaN())).Build()
-
-	if !json.Valid(b) {
-		t.Errorf("invalid json (NaN): %s", b)
-	}
-
-	buf = buffPool.Get().([]byte)
-	b = fson.NewObject(buf).Float32("posInf", float32(math.Inf(1))).Build()
-
-	if !json.Valid(b) {
-		t.Errorf("invalid json (+Inf): %s", b)
-	}
-
-	buf = buffPool.Get().([]byte)
-	b = fson.NewObject(buf).Float32("negInf", float32(math.Inf(-1))).Build()
-
-	if !json.Valid(b) {
-		t.Errorf("invalid json (-Inf): %s", b)
-	}
-
-	f := fson.NewObject(buf).Strings("fooArr", []string{"bar", "foo"}).Build()
-	if !json.Valid(f) {
-		t.Errorf("invalid json: %s", f)
-	}
-}
-
-// Test for Floats32 array
-func TestObject_Floats32(t *testing.T) {
-	t.Parallel()
-	buf := buffPool.Get().([]byte)
-	defer buffPool.Put(buf)
-
-	// Test populated array
-	floats32 := []float32{3.14, 0, -3.14, 1.23456}
-	b := fson.NewObject(buf).Floats32("foo", floats32).Build()
-
-	if !json.Valid(b) {
-		t.Errorf("invalid json: %s", b)
-	}
-
-	// Test empty array
-	buf = buffPool.Get().([]byte)
-	emptyFloats32 := []float32{}
-	b = fson.NewObject(buf).Floats32("foo", emptyFloats32).Build()
-
-	if !json.Valid(b) {
-		t.Errorf("invalid json (empty array): %s", b)
-	}
-
-	// Test special values
-	buf = buffPool.Get().([]byte)
-	specialFloats32 := []float32{float32(math.NaN()), float32(math.Inf(1)), float32(math.Inf(-1))}
-	b = fson.NewObject(buf).Floats32("special", specialFloats32).Build()
-
-	if !json.Valid(b) {
-		t.Errorf("invalid json (special values): %s", b)
-	}
-}
-
-// Test for Float64
-func TestObject_Float64(t *testing.T) {
-	t.Parallel()
-	buf := buffPool.Get().([]byte)
-	defer buffPool.Put(buf)
-
-	b := fson.NewObject(buf).Float64("foo", 2.71828).Build()
-
-	if !json.Valid(b) {
-		t.Errorf("invalid json: %s", b)
-	}
-
-	// Test zero
-	buf = buffPool.Get().([]byte)
-	b = fson.NewObject(buf).Float64("foo", 0).Build()
-
-	if !json.Valid(b) {
-		t.Errorf("invalid json (zero): %s", b)
-	}
-
-	// Test negative
-	buf = buffPool.Get().([]byte)
-	b = fson.NewObject(buf).Float64("foo", -2.71828).Build()
-
-	if !json.Valid(b) {
-		t.Errorf("invalid json (negative): %s", b)
-	}
-
-	// Test special values
-	buf = buffPool.Get().([]byte)
-	b = fson.NewObject(buf).Float64("nanValue", math.NaN()).Build()
-
-	if !json.Valid(b) {
-		t.Errorf("invalid json (NaN): %s", b)
-	}
-
-	buf = buffPool.Get().([]byte)
-	b = fson.NewObject(buf).Float64("posInf", math.Inf(1)).Build()
-
-	if !json.Valid(b) {
-		t.Errorf("invalid json (+Inf): %s", b)
-	}
-
-	buf = buffPool.Get().([]byte)
-	b = fson.NewObject(buf).Float64("negInf", math.Inf(-1)).Build()
-
-	if !json.Valid(b) {
-		t.Errorf("invalid json (-Inf): %s", b)
-	}
-}
-
-// Test for Floats64 array
-func TestObject_Floats64(t *testing.T) {
-	t.Parallel()
-	buf := buffPool.Get().([]byte)
-	defer buffPool.Put(buf)
-
-	// Test populated array
-	floats64 := []float64{2.71828, 0, -2.71828, 1.2345678901234}
-	b := fson.NewObject(buf).Floats64("foo", floats64).Build()
-
-	if !json.Valid(b) {
-		t.Errorf("invalid json: %s", b)
-	}
-
-	// Test empty array
-	buf = buffPool.Get().([]byte)
-	emptyFloats64 := []float64{}
-	b = fson.NewObject(buf).Floats64("foo", emptyFloats64).Build()
-
-	if !json.Valid(b) {
-		t.Errorf("invalid json (empty array): %s", b)
-	}
-
-	// Test special values
-	buf = buffPool.Get().([]byte)
-	specialFloats64 := []float64{math.NaN(), math.Inf(1), math.Inf(-1)}
-	b = fson.NewObject(buf).Floats64("special", specialFloats64).Build()
-
-	if !json.Valid(b) {
-		t.Errorf("invalid json (special values): %s", b)
-	}
-}
-
-// Test for Time
-func TestObject_Time(t *testing.T) {
-	t.Parallel()
-	buf := buffPool.Get().([]byte)
-	defer buffPool.Put(buf)
-
-	now := time.Now()
-	b := fson.NewObject(buf).Time("foo", now, time.RFC3339).Build()
-
-	if !json.Valid(b) {
-		t.Errorf("invalid json: %s", b)
-	}
-
-	// Test zero time
-	buf = buffPool.Get().([]byte)
-	zeroTime := time.Time{}
-	b = fson.NewObject(buf).Time("foo", zeroTime, time.RFC3339).Build()
-
-	if !json.Valid(b) {
-		t.Errorf("invalid json (zero time): %s", b)
-	}
-
-	// Test different formats
-	buf = buffPool.Get().([]byte)
-	b = fson.NewObject(buf).Time("rfc822", now, time.RFC822).Build()
-
-	if !json.Valid(b) {
-		t.Errorf("invalid json (RFC822): %s", b)
-	}
-
-	buf = buffPool.Get().([]byte)
-	b = fson.NewObject(buf).Time("unix", now, time.UnixDate).Build()
-
-	if !json.Valid(b) {
-		t.Errorf("invalid json (UnixDate): %s", b)
-	}
-}
-
-// Test for Times array
-func TestObject_Times(t *testing.T) {
-	t.Parallel()
-	buf := buffPool.Get().([]byte)
-	defer buffPool.Put(buf)
-
-	// Test populated array
-	now := time.Now()
-	past := now.Add(-24 * time.Hour)
-	future := now.Add(24 * time.Hour)
-	times := []time.Time{now, past, future}
-	b := fson.NewObject(buf).Times("foo", times, time.RFC3339).Build()
-
-	if !json.Valid(b) {
-		t.Errorf("invalid json: %s", b)
-	}
-
-	// Test empty array
-	buf = buffPool.Get().([]byte)
-	emptyTimes := []time.Time{}
-	b = fson.NewObject(buf).Times("foo", emptyTimes, time.RFC3339).Build()
-
-	if !json.Valid(b) {
-		t.Errorf("invalid json (empty array): %s", b)
-	}
-
-	// Test different formats
-	buf = buffPool.Get().([]byte)
-	b = fson.NewObject(buf).Times("rfc822", times, time.RFC822).Build()
-
-	if !json.Valid(b) {
-		t.Errorf("invalid json (RFC822): %s", b)
-	}
-}
-
-// Test for Durations array
-func TestObject_Durations(t *testing.T) {
-	t.Parallel()
-	buf := buffPool.Get().([]byte)
-	defer buffPool.Put(buf)
-
-	// Test populated array
-	durations := []time.Duration{time.Second, time.Minute, time.Hour, 24 * time.Hour}
-	b := fson.NewObject(buf).Durations("foo", durations).Build()
-
-	if !json.Valid(b) {
-		t.Errorf("invalid json: %s", b)
-	}
-
-	// Test empty array
-	buf = buffPool.Get().([]byte)
-	emptyDurations := []time.Duration{}
-	b = fson.NewObject(buf).Durations("foo", emptyDurations).Build()
-
-	if !json.Valid(b) {
-		t.Errorf("invalid json (empty array): %s", b)
-	}
-
-	// Test mixed durations including negative
-	buf = buffPool.Get().([]byte)
-	mixedDurations := []time.Duration{time.Second, 0, -time.Hour, 24 * time.Hour}
-	b = fson.NewObject(buf).Durations("mixed", mixedDurations).Build()
-
-	if !json.Valid(b) {
-		t.Errorf("invalid json (mixed durations): %s", b)
-	}
-}
-
-// Test for nested objects
-func TestObject_NestedObjects(t *testing.T) {
-	t.Parallel()
-	buf := buffPool.Get().([]byte)
-	defer buffPool.Put(buf)
-
-	// Test simple nested object
-	b := fson.NewObject(buf).
-		Object("nested").
-		String("foo", "bar").
-		Int("num", 42).
-		EndObject().
-		Build()
-
-	if !json.Valid(b) {
-		t.Errorf("invalid json (simple nested): %s", b)
-	}
-
-	// Test empty nested object
-	buf = buffPool.Get().([]byte)
-	b = fson.NewObject(buf).
-		Object("empty").
-		EndObject().
-		Build()
-
-	if !json.Valid(b) {
-		t.Errorf("invalid json (empty nested): %s", b)
-	}
-
-	// Test multiple nested objects
-	buf = buffPool.Get().([]byte)
-	b = fson.NewObject(buf).
-		Object("first").
-		String("name", "first").
-		EndObject().
-		Object("second").
-		String("name", "second").
-		EndObject().
-		Build()
-
-	if !json.Valid(b) {
-		t.Errorf("invalid json (multiple nested): %s", b)
-	}
-
-	// Test deeply nested objects
-	buf = buffPool.Get().([]byte)
-	b = fson.NewObject(buf).
-		Object("level1").
-		Object("level2").
-		Object("level3").
-		String("deep", "value").
-		EndObject().
-		EndObject().
-		EndObject().
-		Build()
-
-	if !json.Valid(b) {
-		t.Errorf("invalid json (deeply nested): %s", b)
-	}
-}
-
-// Test for complex object with mixed types
-func TestObject_ComplexObject(t *testing.T) {
-	t.Parallel()
-	buf := buffPool.Get().([]byte)
-	defer buffPool.Put(buf)
-
-	// Test a complex object with various types
-	now := time.Now()
-	strings := []string{"hello", "world"}
-	ints := []int{1, 2, 3}
-
-	b := fson.NewObject(buf).
-		String("string", "value").
-		Bool("bool", true).
-		Int("int", 42).
-		Float64("float", 3.14159).
-		Time("time", now, time.RFC3339).
-		Duration("duration", time.Hour).
-		Strings("strings", strings).
-		Ints("ints", ints).
-		Object("nested").
-		String("name", "nested object").
-		Bool("active", true).
-		Object("deeper").
-		String("level", "deep").
-		EndObject().
-		EndObject().
-		Build()
-
-	if !json.Valid(b) {
-		t.Errorf("invalid json (complex object): %s", b)
-	}
-
-	if !utf8.Valid(b) {
-		t.Errorf("invalid utf8 (complex object): %s", b)
-	}
-}
-
-func TestObject_ArrayOfObjects(t *testing.T) {
-	t.Parallel()
-
-	buf := buffPool.Get().([]byte)
-	defer buffPool.Put(buf)
-
-	type A struct {
-		String string
-		Int    int
-	}
-
-	arr := []A{
-		{String: "hello", Int: 42},
-		{String: "world", Int: 0},
-		{String: "hello", Int: 0},
-	}
-
-	obj := fson.NewObject(buf)
-
-	obj = obj.Array("objects")
-	for _, a := range arr {
-		obj = obj.StartObject().
-			String("string", a.String).
-			Int("int", a.Int).
-			EndObject()
-	}
-	b := obj.EndArray().Build() // -> {"objects":[{"string":"hello","int":42},{"string":"world","int":0},{"string":"hello","int":0}]}
-
-	if !json.Valid(b) {
-		t.Errorf("invalid json (array of objects): %s", b)
-	}
-
-	if !utf8.Valid(b) {
-		t.Errorf("invalid utf8 (array of objects): %s", b)
-	}
-}
-
-func TestObject_Floats64_WithNan(t *testing.T) {
-	t.Parallel()
-
-	buf := buffPool.Get().([]byte)
-	defer buffPool.Put(buf)
-
-	// Test array with various special floating point values
-	specialFloats := []float64{
-		1.23,                        // Regular number
-		0.0,                         // Zero
-		-4.56,                       // Negative number
-		math.NaN(),                  // NaN (Not a Number)
-		math.Inf(1),                 // Positive Infinity
-		math.Inf(-1),                // Negative Infinity
-		math.MaxFloat64,             // Maximum representable float64
-		math.SmallestNonzeroFloat64, // Smallest positive non-zero float64
-	}
-
-	// Encode the array
-	obj := fson.NewObject(buf).Floats64("special", specialFloats).Build()
-
-	// Check if the result is valid JSON
-	if !json.Valid(obj) {
-		t.Errorf("expected valid JSON, got invalid JSON: %s", obj)
 	}
 }
 
@@ -1329,11 +414,11 @@ func TestObject_Floats64_SkippingSpecialValues(t *testing.T) {
 // Test for empty object
 func TestObject_EmptyObject(t *testing.T) {
 	t.Parallel()
-	buf := buffPool.Get().([]byte)
+	buf := buffPool.Get()
 	defer buffPool.Put(buf)
 
 	// Test completely empty object
-	b := fson.NewObject(buf).Build()
+	b := fson.NewObject(buf.Bytes()).Build()
 
 	if !json.Valid(b) {
 		t.Errorf("invalid json (empty object): %s", b)
@@ -1348,11 +433,12 @@ func TestObject_EmptyObject(t *testing.T) {
 // Test for special string characters
 func TestObject_SpecialStringCharacters(t *testing.T) {
 	t.Parallel()
-	buf := buffPool.Get().([]byte)
+
+	buf := buffPool.Get()
 	defer buffPool.Put(buf)
 
 	// Test strings with special characters that should be escaped
-	b := fson.NewObject(buf).
+	b := fson.NewObject(buf.Bytes()).
 		String("quotes", "with \"quotes\"").
 		String("backslash", "with \\backslash").
 		String("newline", "with \nnewline").
@@ -1368,26 +454,17 @@ func TestObject_SpecialStringCharacters(t *testing.T) {
 	if !utf8.Valid(b) {
 		t.Errorf("invalid utf8 (special characters): %s", b)
 	}
-
-	// Test with empty string
-	buf = buffPool.Get().([]byte)
-	b = fson.NewObject(buf).
-		String("empty", "").
-		Build()
-
-	if !json.Valid(b) {
-		t.Errorf("invalid json (empty string): %s", b)
-	}
 }
 
 // Test for key name escaping
 func TestObject_KeyNameEscaping(t *testing.T) {
 	t.Parallel()
-	buf := buffPool.Get().([]byte)
+
+	buf := buffPool.Get()
 	defer buffPool.Put(buf)
 
 	// Test keys with characters that should be escaped
-	b := fson.NewObject(buf).
+	b := fson.NewObject(buf.Bytes()).
 		String("with \"quotes\"", "value").
 		String("with \\backslash", "value").
 		String("with \nnewline", "value").
@@ -1408,11 +485,11 @@ func TestObject_KeyNameEscaping(t *testing.T) {
 func TestObject_BufferReuse(t *testing.T) {
 	t.Parallel()
 
-	// Create a buffer and use it multiple times
-	buf := buffPool.Get().([]byte)
+	buf := buffPool.Get()
+	defer buffPool.Put(buf)
 
 	// First use
-	b1 := fson.NewObject(buf).String("key1", "value1").Build()
+	b1 := fson.NewObject(buf.Bytes()).String("key1", "value1").Build()
 	json1 := string(b1)
 
 	// Second use (without putting back to the pool)
@@ -1427,20 +504,44 @@ func TestObject_BufferReuse(t *testing.T) {
 	if json2 != `{"key2":"value2"}` {
 		t.Errorf("second JSON incorrect: %s", json2)
 	}
+}
 
-	// Clean up
-	buffPool.Put(b2)
+func TestObject_Reset(t *testing.T) {
+	t.Parallel()
+
+	buf := buffPool.Get()
+	defer buffPool.Put(buf)
+
+	obj := fson.NewObject(buf.Bytes())
+
+	b1 := obj.String("foo", "bar").Build()
+	json1 := string(b1)
+
+	if json1 != `{"foo":"bar"}` {
+		t.Errorf("first JSON incorrect: %s", json1)
+	}
+
+	// Reset buffer
+	obj.Reset()
+
+	b2 := obj.String("bar", "foo").Build()
+	json2 := string(b2)
+
+	if json2 != `{"bar":"foo"}` {
+		t.Errorf("second JSON incorrect: %s", json2)
+	}
 }
 
 var result []byte
 
 func BenchmarkObject_BuildSimple(b *testing.B) {
-	buf := buffPool.Get().([]byte)
-	defer buffPool.Put(buf)
+	buf := make([]byte, 1024*100)
 
 	var r []byte
+	obj := fson.NewObject(buf)
 	for b.Loop() {
-		r = fson.NewObject(buf).String("foo", "bar").Build()
+		r = obj.String("foo", "bar").Build()
+		obj.Reset()
 	}
 
 	result = r
@@ -1453,25 +554,26 @@ func BenchmarkJson_StdlibSimple(b *testing.B) {
 
 	a := A{Foo: "bar"}
 	var r []byte
-	buf := buffPool.Get().([]byte)
-	defer buffPool.Put(buf)
 
+	buf := make([]byte, 1024*100)
 	buffer := bytes.NewBuffer(buf)
+
 	for b.Loop() {
 		_ = json.NewEncoder(buffer).Encode(&a)
 		r = buffer.Bytes()
+		buffer.Reset()
 	}
 
 	result = r
 }
 
 func BenchmarkObject_BuildComplex(b *testing.B) {
-	buf := buffPool.Get().([]byte)
-	defer buffPool.Put(buf)
+	buf := make([]byte, 1024*100)
 
 	var r []byte
+	obj := fson.NewObject(buf)
 	for b.Loop() {
-		r = fson.NewObject(buf).
+		r = obj.
 			String("unicode", "😀😀😀😀😀😀😀😀😀😀😀aqwdqwd😀😀😀😀").
 			Object("obj").
 			Float64("float", 1.123124313).
@@ -1481,6 +583,7 @@ func BenchmarkObject_BuildComplex(b *testing.B) {
 			StringValue("third").
 			EndArray().
 			Build()
+		obj.Reset()
 	}
 	result = r
 }
@@ -1507,21 +610,20 @@ func BenchmarkJson_StdlibComplex(b *testing.B) {
 
 	var r []byte
 
-	buf := buffPool.Get().([]byte)
-	defer buffPool.Put(buf)
-
+	buf := make([]byte, 1024*100)
 	buffer := bytes.NewBuffer(buf)
+
 	for b.Loop() {
 		_ = json.NewEncoder(buffer).Encode(&complexStruct)
 		r = buffer.Bytes()
+		buffer.Reset()
 	}
 
 	result = r
 }
 
 func BenchmarkObject_BuildLarge(b *testing.B) {
-	buf := buffPool.Get().([]byte)
-	defer buffPool.Put(buf)
+	buf := make([]byte, 1024*100)
 
 	// Prepare some test data
 	loremIpsum := "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat."
@@ -1558,10 +660,8 @@ func BenchmarkObject_BuildLarge(b *testing.B) {
 	}
 
 	var r []byte
+	obj := fson.NewObject(buf)
 	for b.Loop() {
-		// fson.NewObject already resets the buffer internally
-		obj := fson.NewObject(buf)
-
 		// Add a variety of scalar values
 		obj.String("id", "a1b2c3d4-e5f6-7890-abcd-ef1234567890")
 		obj.Int("count", 12345)
@@ -1630,6 +730,7 @@ func BenchmarkObject_BuildLarge(b *testing.B) {
 		obj.EndObject()
 
 		r = obj.Build()
+		obj.Reset()
 	}
 
 	result = r
@@ -1781,13 +882,13 @@ func BenchmarkJson_StdlibLarge(b *testing.B) {
 
 	var r []byte
 
-	buf := buffPool.Get().([]byte)
-	defer buffPool.Put(buf)
-
+	buf := make([]byte, 1024*100)
 	buffer := bytes.NewBuffer(buf)
+
 	for b.Loop() {
 		_ = json.NewEncoder(buffer).Encode(&largeStruct)
 		r = buffer.Bytes()
+		buffer.Reset()
 	}
 
 	result = r

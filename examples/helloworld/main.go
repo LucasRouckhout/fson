@@ -3,21 +3,16 @@ package main
 import (
 	"fmt"
 	"github.com/LucasRouckhout/fson"
-	"sync"
+	"github.com/LucasRouckhout/fson/fsonutil"
 )
 
-var buffPool = sync.Pool{
-	New: func() interface{} {
-		return make([]byte, 0, 100)
-	},
-}
+var buffPool = fsonutil.NewPool()
 
 func main() {
-	// Get yourself a buffer
-	buf := buffPool.Get().([]byte)
+	buf := buffPool.Get()
 	defer buffPool.Put(buf)
 
-	b := fson.NewObject(buf).
+	b := fson.NewObject(buf.Bytes()).
 		String("hello", "world").
 		Bool("bool", true).
 		Object("obj").

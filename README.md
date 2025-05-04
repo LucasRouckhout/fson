@@ -1,20 +1,17 @@
-# fson - High-performance JSON Encoder for Go
+# fson - High-performance, Zero-Allocation JSON Encoder for Go
 
 [![Go Report Card](https://goreportcard.com/badge/github.com/LucasRouckhout/fson)](https://goreportcard.com/report/github.com/LucasRouckhout/fson)
 [![GoDoc](https://godoc.org/github.com/LucasRouckhout/fson?status.svg)](https://godoc.org/github.com/LucasRouckhout/fson)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
-`fson` is a high-performance JSON encoder for Go that focuses on simplicity and avoiding heap allocations. `fson` does one
-thing and does it well: encode JSON. It explicitly does not try to solve other problems in the same space. If you need 
-a serialization library `fson` is probably not the tool for you. The whole library is implemented as a single file 
-of only ~1000LOC which makes it easy to validate and vendor if desired.
+`fson` is a high-performance JSON encoder for Go that focuses on simplicity and full control over heap allocations. 
 
-- **Fluent API**: Simple chainable interface for building JSON structures
+- **Fluent API**: Simple chainable methods for building JSON structures
 - **Complete Control**: Full control over the produced JSON and heap allocations.
-- **UTF8** `fson` guarantees to only produce valid UTF8 byte sequences.
-- **No Reflection**: `fson` avoids reflection completely
-- **Simple Implementation**: The entire library is contained in a single file of ~1000 lines (mostly documentation)
+- **Simple Implementation**: The entire core library is contained in a single file of ~1000 lines (mostly documentation)
 - **Easy to Vendor**: The small codebase makes it easy to vendor `fson` into an existing codebase
+- **No Reflection**: `fson` avoids reflection completely
+- **Zero Allocations**: `fson` by itself will not allocate any memory on the heap, unless you force it to.
 
 The finer details (especially UTF8 handling) of this library are heavily inspired by the json encoder of Uber's Zap logging library
 [zapcore](https://github.com/uber-go/zap/tree/master/zapcore).
@@ -27,20 +24,16 @@ package main
 import (
 	"fmt"
 	"github.com/LucasRouckhout/fson"
-	"sync"
+	"github.com/LucasRouckhout/fson/fsonutil"
 )
 
-var buffPool = sync.Pool{
-	New: func() interface{} {
-		return make([]byte, 0, 1024)
-	},
-}
+var buffPool = fsonutil.NewPool()
 
 func main() {
-	buf := buffPool.Get().([]byte)
+	buf := buffPool.Get()
 	defer buffPool.Put(buf)
 
-	b := fson.NewObject(buf).
+	b := fson.NewObject(buf.Bytes()).
 		String("hello", "world").
 		Bool("bool", true).
 		Object("obj").
@@ -50,10 +43,8 @@ func main() {
 		EndObject().
 		Build()
 
-	fmt.Println(string(b))
-	// -> {"foo":"bar","bool":true,"obj":{"foo":"bar","bool":false,"int":8}}
+	fmt.Println(string(b)) // -> {"foo":"bar","bool":true,"obj":{"foo":"bar","bool":false,"int":8}}
 }
-
 ```
 
 # Usage
@@ -106,10 +97,13 @@ need to fall back to the lower level API to produce the desired output.
 
 The raison d'être for `fson` is to allow developers full control over both the produced JSON and heap allocations as 
 much as possible. That's to say that while `fson` itself is very performant, using it incorrectly can cause you to lose 
-all the performance gains it potentially offers. Here are some tips and tricks to use `fson` in an efficient manner.
+all the performance gains it potentially offers. It's a classic case of: "With great power comes great responsibility".
 
+> Incorrect use of `fson` will potentially negate all performance gains it has to offer.
 
-### Use a sync.Pool
+Here are some tips and tricks to use `fson` in an efficient manner.
+
+### Use the provided `fsonutil` buffer pool
 
 Avoid using make inside a function that is called multiple times within the lifetime of your program.
 
@@ -122,87 +116,82 @@ func IfYouCallThisFunctionALotThisIsBad() {
 }
 ```
 
-This will allocate a new buffer on the heap everytime the function is called. Instead, 
-use a [sync.Pool](https://pkg.go.dev/sync#Pool) for this use case.
+This will allocate a new buffer on the heap everytime the function is called. Instead, you should be using a
+buffer pool for this use-case. `fsonutil` provides a specialized buffer pool for use with `fson` that avoids
+pinning large chunks of memory. Most people will want to use this specialized buffer pool.
 
 ```go
-var buffPool = sync.Pool{
-	New: func() interface{} {
-		return make([]byte, 0, 1024)
-	},
-}
+var buffPool = fsonutil.NewPool()
 
 func Better() {
-	// ...
-	buf := buffPool.Get().([]byte)
+	buf := buffPool.Get()
 	defer buffPool.Put(buf)
 	
-	fson.NewObject(buff)
-	// ...
+	obj := fson.NewObject(buf.Bytes())
+	b := obj.String("hello", "world") // do things
+    //...
 }
 ```
 
 This avoids allocating on the heap if the pool already contains a buffer.
 
-### Reuse of buffers
+### Reuse fson.Object
 
 If you need to write out multiple JSON objects in the course of a single function you can reuse the same buffer. But!
 You have to make sure to write out the result somewhere between each reuse.
 
 ```go
 func Reuse() {
-	// ...
-	buf := buffPool.Get().([]byte)
+    // ...
+	buf := buffPool.Get()
 	defer buffPool.Put(buf)
 
-	first := fson.NewObject(buf).String("first", "message").Build()
-	// Write out the response to STDOUT, after this you can safely reuse the buffer.
-	fmt.Println(string(first))
+    obj := fson.NewObject(buf.Bytes())
 
-	// Use the same buffer
-	second := fson.NewObject(buf).String("second", "message").Build()
-	// Print out the second message
-	fmt.Println(string(second))
+    first := obj.String("first", "message").Build()
+    // Write out the response to STDOUT, after this you can safely reuse the buffer.
+    fmt.Println(string(first)) // {"first":"message"}
 
-	// ...
+    // Reset the internal buffer, ready for reuse 
+    obj.Reset()
+
+    // Use the same object
+    second := obj.String("second", "message").Build()
+    // Print out the second message
+    fmt.Println(string(second)) // {"second":"message"}
+
+    // ...
 }
 ```
 
 **NOTE**: This only works if you write out the result to some writer between reuses. `fson` will reset the buffer on 
-creation of a new object and will override the values of the underlying array the byte slice is pointing to. So this is
-wrong!
+a call to Reset() and will override the values that were already written to the slice. So this is wrong:
 
 
 ```go
 func BAD_DO_NOT_DO_THIS() {
 	// ...
-	buf := buffPool.Get().([]byte)
+	buf := buffPool.Get()
 	defer buffPool.Put(buf)
-
-	first := fson.NewObject(buf).String("first", "message").Build()
-	// THIS WILL OVERRIDE THE BUFFER but you have not written out the result of first
-	second := fson.NewObject(buf).String("second", "message").Build()
+	
+	obj := fson.NewObject(buf.Bytes())
+	first := obj.String("first", "message").Build()
+	// THIS WILL OVERRIDE THE BUFFER but you have not written out the result yet!
+	second := obj.String("second", "message").Build()
     
 	fmt.Println(string(first))
 	fmt.Println(string(second))
-	// This prints out broken garbage!
-
+	
 	// ...
 }
 ```
 
-### How to shoot yourself in the foot
-
-Coming soon...
-
-### Benchmarks
+## Benchmarks
 
 Benchmarks are notoriously easy to manipulate and can be misleading but everybody wants to see the numbers so here they
-are. These initial benchmarks were mostly written as a guide to make sure fson out-performs stdlib. They are very 
-much open for improvements. 
-
-As already mentioned, your millage may vary because how you use `fson` has a big impact on the performance gains it 
-provides.
+are. These benchmarks are definitely "manipulated" to some degree. The most obvious tweak I made is to allocate a big
+enough buffer for each benchmark so that the underlying append calls would never have to reallocate a new array.
+Although to some degree they are fair because the stdlib tests get the same exact buffer size.
 
 You can run the benchmarks yourself by running `make benchmark`. Running these on a Apple M3 Pro gives you roughly these
 results.
@@ -210,110 +199,38 @@ results.
 ```text
 Benchmark                      Time/Op         Allocs/Op       Bytes/Op        vs Standard     Improvement    
 -----------------------------  --------------- --------------- --------------- --------------- ---------------
-BenchmarkObject_BuildSimple    33.52 ns/op     24 allocs/op    1 B/op          1x (baseline)   -              
-BenchmarkJson_StdlibSimple     87.69 ns/op     133 allocs/op   1 B/op          2.62x           61.77%         
+BenchmarkObject_BuildSimple    16.73 ns/op     0 allocs/op     0 B/op          1x (baseline)   -              
+BenchmarkJson_StdlibSimple     72.14 ns/op     96 allocs/op    1 B/op          4.31x           76.81%         
 -----------------------------  --------------- --------------- --------------- --------------- ---------------
-BenchmarkObject_BuildComplex   220.5 ns/op     232 allocs/op   2 B/op          1x (baseline)   -              
-BenchmarkJson_StdlibComplex    337.4 ns/op     394 allocs/op   1 B/op          1.53x           34.65%         
+BenchmarkObject_BuildComplex   159.7 ns/op     0 allocs/op     0 B/op          1x (baseline)   -              
+BenchmarkJson_StdlibComplex    281.4 ns/op     96 allocs/op    1 B/op          1.76x           43.25%         
 -----------------------------  --------------- --------------- --------------- --------------- ---------------
-BenchmarkObject_BuildLarge     22497 ns/op     61576 allocs/op 13 B/op         1x (baseline)   -              
-BenchmarkJson_StdlibLarge      34079 ns/op     45891 allocs/op 12 B/op         1.51x           33.99%         
+BenchmarkObject_BuildLarge     17171 ns/op     0 allocs/op     0 B/op          1x (baseline)   -              
+BenchmarkJson_StdlibLarge      22541 ns/op     630 allocs/op   12 B/op         1.31x           23.82%         
 -----------------------------  --------------- --------------- --------------- --------------- ---------------
 
 Summary                        fson            stdlib          Improvement    
 -----------------------------  --------------- --------------- ---------------
-Simple Case                    33.52 ns/op     87.69 ns/op     61.77%         
-Complex Case                   220.5 ns/op     337.4 ns/op     34.65%         
-Large Case                     22497 ns/op     34079 ns/op     33.99%         
-Average Improvement            -               -               43.47% 
+Simple Case                    16.73 ns/op     72.14 ns/op     76.81%         
+Complex Case                   159.7 ns/op     281.4 ns/op     43.25%         
+Large Case                     17171 ns/op     22541 ns/op     23.82%         
+Average Improvement            -               -               47.96% 
 ```
 
-# Examples
 
-### Basic Usage
+## A note on floating point values
 
-Creating a simple JSON object:
+Floats will be rendered as their numeric value. But there are some special values that might require some extra care.
 
-```go
-package main
+Special float values like NaN and Infinity will be encoded as string values rather than JSON numbers, as JSON does not
+support these values as numbers.
 
-import (
-	"fmt"
-	"github.com/LucasRouckhout/fson"
-)
+This means that arrays containing these special values will contain a mix of numeric types and string types. According
+to RFC 8259 Section 5 (https://datatracker.ietf.org/doc/html/rfc8259#section-5) this is still valid JSON.
 
-func main() {
-	// Pre-allocate a buffer with enough capacity
-	buf := make([]byte, 0, 1024)
-	
-	// Create a JSON object
-	json := fson.NewObject(buf).
-		String("name", "John Doe").
-		Int("age", 30).
-		Bool("active", true).
-		Build()
-	
-	fmt.Println(string(json))
-	// Output: {"name":"John Doe","age":30,"active":true}
-}
-```
-
-### Arrays
-
-Create an array of objects:
-
-```go
-package main
-
-import (
-	"fmt"
-	"github.com/LucasRouckhout/fson"
-)
-
-func main() {
-	buf := make([]byte, 0, 1024)
-	
-	// Create a JSON object with an array of objects
-	json := fson.NewObject(buf).
-		Array("people").
-			StartObject().
-				String("name", "Alice").
-				Int("age", 28).
-				Bool("active", true).
-			EndObject().
-			StartObject().
-				String("name", "Bob").
-				Int("age", 32).
-				Bool("active", false).
-			EndObject().
-			StartObject().
-				String("name", "Charlie").
-				Int("age", 25).
-				Bool("active", true).
-			EndObject().
-		EndArray().
-		Build()
-	
-	fmt.Println(string(json))
-	// Output: {"people":[{"name":"Alice","age":28,"active":true},{"name":"Bob","age":32,"active":false},{"name":"Charlie","age":25,"active":true}]}
-}
-```
-
-### Floating point values
-
-Floats will be rendered as their numeric value. But there are some special values that
-might require some extra care.
-
-Special float values like NaN and Infinity will be encoded as string values
-rather than JSON numbers, as JSON does not support these values as numbers.
-
-This means that arrays containing these special values will contain a mix of
-numeric types and string types. According to RFC 8259 Section 5
-(https://datatracker.ietf.org/doc/html/rfc8259#section-5) this is still valid JSON.
-
-While this mixed-type array is valid JSON, it may cause issues when
-deserializing into strictly typed arrays. If you need consistent types for deserialization, consider using the more
-explicit Start and Value API.
+While this mixed-type array is valid JSON, it may cause issues when deserializing into strictly typed arrays. If you
+need consistent types for deserialization, consider using the more explicit Start and Value API to control
+which values are added to your array.
 
 ```go
 package main
@@ -356,194 +273,6 @@ func main() {
 	// Output: {"withSpecialValues":[1.23,"NaN",4.56,"+Inf",7.89,"-Inf"],"filteredValues":[1.23,4.56,7.89]}
 }
 ```
-
-### Multi-Type Arrays
-
-Creating arrays with mixed types:
-
-```go
-package main
-
-import (
-	"fmt"
-	"time"
-	"github.com/LucasRouckhout/fson"
-)
-
-func main() {
-	buf := make([]byte, 0, 1024)
-
-	// Create a JSON object with a multi-type array
-	obj := fson.NewObject(buf).
-		// Use the Array method to start a heterogeneous array
-		Array("mixedTypes").
-		StringValue("text value").
-		IntValue(42).
-		BoolValue(true).
-		Float64Value(3.14159).
-		// Add different types of values to the array
-		StartObject().
-		String("key", "value").
-		EndObject().
-		StartArray().
-		IntValue(1).
-		IntValue(2).
-		EndArray().
-		NullValue().
-		EndArray()
-
-	json := obj.Build()
-
-	fmt.Println(string(json))
-	// Output: {"mixedTypes":["text value",42,true,3.14159,{"key":"value"},[1,2],null]}
-}
-
-```
-
-### Date and Time Values
-
-Handling date and time values:
-
-```go
-package main
-
-import (
-	"fmt"
-	"time"
-	"github.com/LucasRouckhout/fson"
-)
-
-func main() {
-	buf := make([]byte, 0, 1024)
-	
-	// Create some time values
-	now := time.Now()
-	yesterday := now.AddDate(0, 0, -1)
-	tomorrow := now.AddDate(0, 0, 1)
-	dur := 1*time.Hour + 23*time.Minute + 45*time.Second
-
-	// Create a JSON object with time values
-	json := fson.NewObject(buf).
-		Time("now", now, time.RFC3339).
-		Time("iso8601", now, time.RFC3339).
-		Time("rfc822", now, time.RFC822).
-		Time("custom", now, "2006-01-02").
-		Times("schedule", []time.Time{yesterday, now, tomorrow}, time.RFC3339).
-		// Duration is stored as a human-readable string using the String() method
-		Duration("elapsed", dur).
-		// Use Int64 to store duration as nanoseconds (or any other unit) if needed
-		Int64("elapsedNanos", dur.Nanoseconds()).
-		Build()
-	
-	fmt.Println(string(json))
-	// Output will contain formatted dates and times
-}
-```
-
-### UTF8 and character escaping
-
-Handling strings with special characters:
-
-```go
-package main
-
-import (
-	"fmt"
-	"github.com/LucasRouckhout/fson"
-)
-
-func main() {
-	buf := make([]byte, 0, 1024)
-	
-	// Create a JSON object with strings containing special characters
-	json := fson.NewObject(buf).
-		String("simpleText", "Hello World").
-		String("quotedText", "She said, \"Hello!\"").
-		String("escapedChars", "Tab:\t Newline:\n Backslash:\\").
-		String("unicodeChars", "Emoji: 😊 Kanji: 漢字").
-		String("controlChars", string([]byte{0x01, 0x02})).
-		String("path", "C:\\Program Files\\App\\config.json").
-		String("html", "<div>Some HTML content</div>").
-		Build()
-	
-	fmt.Println(string(json))
-	// All special characters will be properly escaped in the output
-}
-```
-
-### Working with Null Values
-
-JSON allows for explicit `null` values, which represent the absence of a value or an undefined value. In fson, you can easily work with null values using the dedicated null-handling functions.
-
-The `Null()` function lets you quickly add a key with a null value:
-
-```go
-package main
-
-import (
-	"fmt"
-	"github.com/LucasRouckhout/fson"
-)
-
-func main() {
-	buf := make([]byte, 0, 256)
-	
-	json := fson.NewObject(buf).
-		String("name", "John Doe").
-		Int("age", 30).
-		Null("address").    // Explicitly set address to null
-		Build()
-	
-	fmt.Println(string(json))
-	// Output: {"name":"John Doe","age":30,"address":null}
-}
-```
-
-When using the explicit key-value approach, you can use NullValue() after a key or inside of an array.
-
-```go
-package main
-
-import (
-	"fmt"
-	"github.com/LucasRouckhout/fson"
-)
-
-func main() {
-	buf := make([]byte, 0, 256)
-	
-	json := fson.NewObject(buf).
-		Array("items").
-			StringValue("first").
-			NullValue().          // Add a null element
-			StringValue("third").
-		EndArray().
-		
-		// You can also create arrays with mixed types including nulls
-		Array("mixed").
-			IntValue(42).
-			NullValue().          // Add a null element
-			BoolValue(true).
-			StringValue("text").
-		EndArray().
-		Build()
-	
-	fmt.Println(string(json))
-	// Output: {"items":["first",null,"third"],"mixed":[42,null,true,"text"]}
-}
-```
-
-# A note on performance
-
-Using `fson` won't make your code fast "out-of-the-box" but will enable you to
-more efficiently encode JSON. Here are some tips and tricks to use `fson` efficiently.
-
-### Make use of sync.Pool
-
-
-
-
-
 
 
 

@@ -13,6 +13,7 @@ fuzz_clean:
 
 lint:
 	golangci-lint run fson.go
+	golangci-lint run ./fsonutil/fsonutil.go
 
 .PHONY: benchmark
 

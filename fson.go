@@ -1117,6 +1117,24 @@ func (o *Object) Build() []byte {
 	return o.buf
 }
 
+// Reset resets the underlying buffer and prepares the Object for reuse.
+// It clears all existing JSON content, truncates the buffer to length 0
+// and adds the opening brace '{' to start a new JSON object.
+//
+// After Reset(), the object is in the initial state as if newly created with
+// NewObject() - any previous structure is completely discarded.
+func (o *Object) Reset() *Object {
+	o.buf = o.buf[:0]
+	o.buf = append(o.buf, '{')
+	return o
+}
+
+// Size returns the size of the underlying buffer
+func (o *Object) Size() int { return len(o.buf) }
+
+// Cap returns the capacity of the underlying buffer
+func (o *Object) Cap() int { return cap(o.buf) }
+
 func appendString(buf []byte, s string) []byte {
 	buf = append(buf, '"')
 	buf = safeAppendString(

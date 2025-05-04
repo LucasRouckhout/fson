@@ -8,3 +8,4 @@ linters:
     - nlreturn
     - godot
     - mnd
+    - depguard
